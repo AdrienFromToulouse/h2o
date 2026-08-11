@@ -1,0 +1,55 @@
+<!-- Product specification sheet, published to the trade site.
+     Kept as HTML on purpose: it exercises the lossless de-markup rule in
+     docs/adrs/002-ingestion-against-the-vocabulary.md. A reader of
+     &pound;1,249.00 sees £1,249.00, and that is what any extractor will quote,
+     so citations are checked against the flattened text, not the raw markup. -->
+<div class="spec-sheet" data-doc="SPEC-FS500SPK" data-revision="4" data-issued="2024-03-11">
+
+  <h1>FS-500-SPK Freestanding Dispenser</h1>
+  <p class="strapline">Still, chilled &amp; sparkling from the mains. No bottles, no deliveries.</p>
+
+  <h2>Performance</h2>
+  <table>
+    <tr><th>Dispense rate</th><td>2.4 L/min</td></tr>
+    <tr><th>Chilled output</th><td>30 L/hour at 5&nbsp;&deg;C</td></tr>
+    <tr><th>Sparkling output</th><td>18 L/hour</td></tr>
+    <tr><th>Supply pressure</th><td>1.5 &ndash; 6.0 bar</td></tr>
+    <tr><th>Ambient operating range</th><td>4 &deg;C to 32 &deg;C</td></tr>
+  </table>
+
+  <h2>Treatment path</h2>
+  <ol>
+    <li>Sediment filter</li>
+    <li>Carbon filter</li>
+    <li>UV lamp</li>
+    <li>Mineral cartridge</li>
+    <li>Chiller block &amp; carbonator</li>
+  </ol>
+
+  <h2>Consumables</h2>
+  <table>
+    <tr><th>Carbon filter</th><td>6 months / 4,500 L</td></tr>
+    <tr><th>Sediment filter</th><td>12 months</td></tr>
+    <tr><th>UV lamp</th><td>9,000 hours</td></tr>
+    <tr><th>CO&#8322; cylinder</th><td>Exchanged on demand</td></tr>
+  </table>
+
+  <h2>Physical</h2>
+  <table>
+    <tr><th>Height &times; width &times; depth</th><td>1,180 &times; 340 &times; 480 mm</td></tr>
+    <tr><th>Weight, empty</th><td>44 kg</td></tr>
+    <tr><th>Rear clearance</th><td>80 mm minimum</td></tr>
+  </table>
+
+  <h2>Commercial</h2>
+  <div class="price">&pound;1,249.00</div>
+  <p class="price-note">Excludes VAT &amp; installation. Service contract quoted separately.</p>
+
+  <h2>Connectivity</h2>
+  <p>
+    The FS-500-SPK reports usage, consumable life &amp; fault conditions over the
+    fleet telemetry service. Reported measures include volume dispensed by output
+    type, filter life remaining, CO&#8322; pressure and UV lamp hours.
+  </p>
+
+</div>

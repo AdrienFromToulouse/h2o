@@ -1,0 +1,266 @@
+@prefix h2o:  <https://vocab.h2o.example/id/> .
+@prefix hs:   <https://vocab.h2o.example/scheme/> .
+@prefix tel:  <https://vocab.h2o.example/telemetry/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+
+# Telemetry: the machine-side vocabulary, mapped onto the business one.
+#
+# This scheme is owned by the firmware team and versions on their release
+# cycle. It is deliberately SEPARATE from the business schemes so that a
+# firmware rename is not a business-vocabulary change, and so that no
+# attribute key ever reaches the curation UI.
+# See docs/adrs/003-otel-fleet-signals-to-skos.md.
+#
+# INVENTED FIXTURE DATA. `service.name`, `service.namespace`,
+# `deployment.environment`, `device.id` and `device.model.identifier` are real
+# OpenTelemetry semantic conventions. Everything below was authored for this
+# demonstrator: `component.type`, `water.output`, `fault.code`, `fault.type`,
+# `service.type`, the E-codes, and every `dispenser.*` instrument name.
+#
+# NOTE: there is deliberately NO concept for `fault.type=scale_buildup` or
+# `fault.code=E42`. The recorded fixture emits both, they map to nothing, and
+# that unmapped signal is what opens the telemetry-driven demonstration loop.
+
+hs:telemetry a skos:ConceptScheme ;
+    dct:title       "Telemetry Signals"@en ;
+    dct:description "OpenTelemetry attribute values and instrument names emitted by dispenser firmware, aligned to the business vocabulary."@en ;
+    dct:creator     "Firmware"@en ;
+    skos:hasTopConcept tel:component.type, tel:water.output, tel:fault.type,
+                       tel:fault.code, tel:service.type, tel:instrument .
+
+h2o:otelSignal a owl:AnnotationProperty ;
+    rdfs:label   "OTEL instrument name"@en ;
+    rdfs:comment "The OpenTelemetry instrument or event on which this token appears."@en .
+
+h2o:otelUnit a owl:AnnotationProperty ;
+    rdfs:label   "OTEL unit"@en ;
+    rdfs:comment "The UCUM unit declared by the instrument."@en .
+
+##  Attribute keys: the top level mirrors the wire structure  ################
+#
+# Keys carry no mapping. Only the leaf tokens align to business concepts,
+# because it is the value that names a thing, not the key.
+
+tel:component.type a skos:Concept ;
+    skos:inScheme     hs:telemetry ;
+    skos:topConceptOf hs:telemetry ;
+    skos:prefLabel    "component.type"@en ;
+    skos:definition   "Attribute key identifying which serviceable component a data point concerns."@en ;
+    owl:versionInfo   "1" .
+
+tel:water.output a skos:Concept ;
+    skos:inScheme     hs:telemetry ;
+    skos:topConceptOf hs:telemetry ;
+    skos:prefLabel    "water.output"@en ;
+    skos:definition   "Attribute key identifying which form of water a dispense data point concerns."@en ;
+    owl:versionInfo   "1" .
+
+tel:fault.type a skos:Concept ;
+    skos:inScheme     hs:telemetry ;
+    skos:topConceptOf hs:telemetry ;
+    skos:prefLabel    "fault.type"@en ;
+    skos:definition   "Attribute key giving the symbolic class of a reported fault."@en ;
+    owl:versionInfo   "1" .
+
+tel:fault.code a skos:Concept ;
+    skos:inScheme     hs:telemetry ;
+    skos:topConceptOf hs:telemetry ;
+    skos:prefLabel    "fault.code"@en ;
+    skos:definition   "Attribute key giving the firmware's numeric fault code."@en ;
+    owl:versionInfo   "1" .
+
+tel:service.type a skos:Concept ;
+    skos:inScheme     hs:telemetry ;
+    skos:topConceptOf hs:telemetry ;
+    skos:prefLabel    "service.type"@en ;
+    skos:definition   "Attribute key giving the class of a recorded service event."@en ;
+    owl:versionInfo   "1" .
+
+tel:instrument a skos:Concept ;
+    skos:inScheme     hs:telemetry ;
+    skos:topConceptOf hs:telemetry ;
+    skos:prefLabel    "instrument"@en ;
+    skos:definition   "Instrument names that map to a business measure directly, without an attribute."@en ;
+    owl:versionInfo   "1" .
+
+##  component.type  ###########################################################
+
+tel:component.type.carbon_filter a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:component.type ;
+    skos:prefLabel  "component.type=carbon_filter"@en ;
+    skos:notation   "carbon_filter" ;
+    h2o:otelSignal  "dispenser.filter.life_remaining" ;
+    h2o:otelUnit    "%" ;
+    skos:exactMatch h2o:carbon-filter ;
+    owl:versionInfo "1" .
+
+tel:component.type.sediment_filter a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:component.type ;
+    skos:prefLabel  "component.type=sediment_filter"@en ;
+    skos:notation   "sediment_filter" ;
+    h2o:otelSignal  "dispenser.filter.life_remaining" ;
+    h2o:otelUnit    "%" ;
+    skos:exactMatch h2o:sediment-filter ;
+    owl:versionInfo "1" .
+
+tel:component.type.ro_membrane a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:component.type ;
+    skos:prefLabel  "component.type=ro_membrane"@en ;
+    skos:notation   "ro_membrane" ;
+    h2o:otelSignal  "dispenser.filter.life_remaining" ;
+    h2o:otelUnit    "%" ;
+    skos:exactMatch h2o:ro-membrane ;
+    owl:versionInfo "1" .
+
+tel:component.type.uv_lamp a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:component.type ;
+    skos:prefLabel  "component.type=uv_lamp"@en ;
+    skos:notation   "uv_lamp" ;
+    h2o:otelSignal  "dispenser.uv.lamp_hours" ;
+    h2o:otelUnit    "h" ;
+    skos:exactMatch h2o:uv-lamp ;
+    owl:versionInfo "1" .
+
+tel:component.type.co2_cylinder a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:component.type ;
+    skos:prefLabel  "component.type=co2_cylinder"@en ;
+    skos:notation   "co2_cylinder" ;
+    h2o:otelSignal  "dispenser.co2.pressure" ;
+    h2o:otelUnit    "bar" ;
+    skos:exactMatch h2o:co2-cylinder ;
+    owl:versionInfo "1" .
+
+tel:component.type.mineral_cartridge a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:component.type ;
+    skos:prefLabel  "component.type=mineral_cartridge"@en ;
+    skos:notation   "mineral_cartridge" ;
+    h2o:otelSignal  "dispenser.filter.life_remaining" ;
+    h2o:otelUnit    "%" ;
+    skos:exactMatch h2o:mineral-cartridge ;
+    owl:versionInfo "1" .
+
+##  water.output  #############################################################
+
+tel:water.output.still a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:water.output ;
+    skos:prefLabel  "water.output=still"@en ;
+    skos:notation   "still" ;
+    h2o:otelSignal  "dispenser.water.dispensed" ;
+    h2o:otelUnit    "L" ;
+    skos:exactMatch h2o:still ;
+    owl:versionInfo "1" .
+
+tel:water.output.chilled a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:water.output ;
+    skos:prefLabel  "water.output=chilled"@en ;
+    skos:notation   "chilled" ;
+    h2o:otelSignal  "dispenser.water.dispensed" ;
+    h2o:otelUnit    "L" ;
+    skos:exactMatch h2o:chilled ;
+    owl:versionInfo "1" .
+
+tel:water.output.sparkling a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:water.output ;
+    skos:prefLabel  "water.output=sparkling"@en ;
+    skos:notation   "sparkling" ;
+    h2o:otelSignal  "dispenser.water.dispensed" ;
+    h2o:otelUnit    "L" ;
+    skos:exactMatch h2o:sparkling ;
+    owl:versionInfo "1" .
+
+##  fault.type and fault.code  ################################################
+
+tel:fault.type.low_flow a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:fault.type ;
+    skos:prefLabel  "fault.type=low_flow"@en ;
+    skos:notation   "low_flow" ;
+    h2o:otelSignal  "dispenser.fault" ;
+    skos:exactMatch h2o:low-flow ;
+    owl:versionInfo "1" .
+
+# closeMatch, not exactMatch: the firmware condition is narrower than the
+# business term, and saying so is more useful than flattening the difference.
+tel:fault.code.E17 a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:fault.code ;
+    skos:prefLabel  "fault.code=E17"@en ;
+    skos:notation   "E17" ;
+    h2o:otelSignal  "dispenser.fault" ;
+    skos:closeMatch h2o:low-flow ;
+    skos:scopeNote  "Firmware raises E17 below 0.8 L/min; the business term also covers user-reported slow flow with no sensor trigger."@en ;
+    owl:versionInfo "1" .
+
+tel:fault.type.no_cooling a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:fault.type ;
+    skos:prefLabel  "fault.type=no_cooling"@en ;
+    skos:notation   "no_cooling" ;
+    h2o:otelSignal  "dispenser.fault" ;
+    skos:exactMatch h2o:no-cooling ;
+    owl:versionInfo "1" .
+
+tel:fault.code.E23 a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:fault.code ;
+    skos:prefLabel  "fault.code=E23"@en ;
+    skos:notation   "E23" ;
+    h2o:otelSignal  "dispenser.fault" ;
+    skos:closeMatch h2o:no-cooling ;
+    skos:scopeNote  "Firmware raises E23 when the chiller block fails to reach setpoint within its timeout."@en ;
+    owl:versionInfo "1" .
+
+##  service.type  #############################################################
+
+tel:service.type.filter_replacement a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:service.type ;
+    skos:prefLabel  "service.type=filter_replacement"@en ;
+    skos:notation   "filter_replacement" ;
+    h2o:otelSignal  "dispenser.service" ;
+    skos:exactMatch h2o:filter-replacement ;
+    owl:versionInfo "1" .
+
+##  Instrument names mapped directly  #########################################
+
+tel:instrument.bottles_avoided a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:instrument ;
+    skos:prefLabel  "dispenser.bottles_avoided"@en ;
+    skos:notation   "dispenser.bottles_avoided" ;
+    h2o:otelSignal  "dispenser.bottles_avoided" ;
+    h2o:otelUnit    "{bottle}" ;
+    skos:exactMatch h2o:single-use-bottles-avoided ;
+    owl:versionInfo "1" .
+
+tel:instrument.water_dispensed a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:instrument ;
+    skos:prefLabel  "dispenser.water.dispensed"@en ;
+    skos:notation   "dispenser.water.dispensed" ;
+    h2o:otelSignal  "dispenser.water.dispensed" ;
+    h2o:otelUnit    "L" ;
+    skos:exactMatch h2o:water-dispensed ;
+    owl:versionInfo "1" .
+
+tel:instrument.energy_consumed a skos:Concept ;
+    skos:inScheme   hs:telemetry ;
+    skos:broader    tel:instrument ;
+    skos:prefLabel  "dispenser.energy.consumed"@en ;
+    skos:notation   "dispenser.energy.consumed" ;
+    h2o:otelSignal  "dispenser.energy.consumed" ;
+    h2o:otelUnit    "kW.h" ;
+    skos:exactMatch h2o:energy-consumed ;
+    owl:versionInfo "1" .

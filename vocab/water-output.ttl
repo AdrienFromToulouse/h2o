@@ -1,0 +1,72 @@
+@prefix h2o:  <https://vocab.h2o.example/id/> .
+@prefix hs:   <https://vocab.h2o.example/scheme/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+
+# Water output: the forms of water a dispenser can serve.
+# A flat facet: these are alternatives, not a hierarchy.
+
+hs:water-output a skos:ConceptScheme ;
+    dct:title       "Water Output"@en, "Wateruitgifte"@nl ;
+    dct:description "The forms in which treated water is dispensed to the user."@en ;
+    skos:hasTopConcept h2o:still, h2o:chilled, h2o:sparkling,
+                       h2o:ambient, h2o:hot, h2o:flavoured .
+
+h2o:still a skos:Concept ;
+    skos:inScheme     hs:water-output ;
+    skos:topConceptOf hs:water-output ;
+    skos:prefLabel    "Still"@en, "Koolzuurvrij Water"@nl ;
+    skos:altLabel     "Still Water"@en, "Flat Water"@en, "Non-Sparkling"@en ;
+    skos:definition   "Treated water dispensed without added carbon dioxide."@en ;
+    skos:notation     "WO-STL" ;
+    owl:versionInfo   "1" .
+
+h2o:chilled a skos:Concept ;
+    skos:inScheme     hs:water-output ;
+    skos:topConceptOf hs:water-output ;
+    skos:prefLabel    "Chilled"@en, "Gekoeld Water"@nl ;
+    skos:altLabel     "Chilled Water"@en, "Cold Water"@en ;
+    skos:definition   "Treated water dispensed at refrigerated serving temperature."@en ;
+    skos:related      h2o:chilling ;
+    skos:notation     "WO-CHL" ;
+    owl:versionInfo   "1" .
+
+h2o:sparkling a skos:Concept ;
+    skos:inScheme     hs:water-output ;
+    skos:topConceptOf hs:water-output ;
+    skos:prefLabel    "Sparkling"@en, "Bruisend Water"@nl ;
+    skos:altLabel     "Sparkling Water"@en, "Carbonated Water"@en, "Fizzy Water"@en ;
+    skos:definition   "Treated water dispensed with dissolved carbon dioxide."@en ;
+    skos:related      h2o:carbonation ;
+    skos:notation     "WO-SPK" ;
+    owl:versionInfo   "1" .
+
+h2o:ambient a skos:Concept ;
+    skos:inScheme     hs:water-output ;
+    skos:topConceptOf hs:water-output ;
+    skos:prefLabel    "Ambient"@en, "Water op Kamertemperatuur"@nl ;
+    skos:altLabel     "Room Temperature Water"@en, "Unchilled"@en ;
+    skos:definition   "Treated water dispensed without chilling or heating."@en ;
+    skos:notation     "WO-AMB" ;
+    owl:versionInfo   "1" .
+
+h2o:hot a skos:Concept ;
+    skos:inScheme     hs:water-output ;
+    skos:topConceptOf hs:water-output ;
+    skos:prefLabel    "Hot"@en, "Heet Water"@nl ;
+    skos:altLabel     "Hot Water"@en, "Boiling Water"@en ;
+    skos:definition   "Treated water dispensed at elevated temperature for hot drinks."@en ;
+    skos:related      h2o:heating ;
+    skos:notation     "WO-HOT" ;
+    owl:versionInfo   "1" .
+
+h2o:flavoured a skos:Concept ;
+    skos:inScheme     hs:water-output ;
+    skos:topConceptOf hs:water-output ;
+    skos:prefLabel    "Flavoured"@en, "Water met Smaak"@nl ;
+    skos:altLabel     "Flavoured Water"@en, "Flavored Water"@en, "Infused Water"@en ;
+    skos:definition   "Treated water dosed with concentrated flavouring at the point of dispense."@en ;
+    skos:related      h2o:flavour-pod ;
+    skos:notation     "WO-FLV" ;
+    owl:versionInfo   "1" .

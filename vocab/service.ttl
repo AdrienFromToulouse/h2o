@@ -1,0 +1,102 @@
+@prefix h2o:  <https://vocab.h2o.example/id/> .
+@prefix hs:   <https://vocab.h2o.example/scheme/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+
+# Service: field activities performed on installed equipment.
+
+hs:service a skos:ConceptScheme ;
+    dct:title       "Service"@en, "Service"@nl ;
+    dct:description "Field activities performed on a dispenser over its life, from installation to removal."@en ;
+    skos:hasTopConcept h2o:installation, h2o:maintenance,
+                       h2o:repair, h2o:decommissioning .
+
+h2o:installation a skos:Concept ;
+    skos:inScheme     hs:service ;
+    skos:topConceptOf hs:service ;
+    skos:prefLabel    "Installation"@en, "Installatie"@nl ;
+    skos:altLabel     "Commissioning"@en, "Fitting"@en, "Setup"@en ;
+    skos:definition   "First-time siting, plumbing and commissioning of a dispenser at a customer location."@en ;
+    skos:related      h2o:dispenser ;
+    skos:notation     "SV-INS" ;
+    owl:versionInfo   "1" .
+
+##  Maintenance  ##############################################################
+
+h2o:maintenance a skos:Concept ;
+    skos:inScheme     hs:service ;
+    skos:topConceptOf hs:service ;
+    skos:prefLabel    "Maintenance"@en, "Onderhoud"@nl ;
+    skos:altLabel     "Servicing"@en ;
+    skos:definition   "Planned work carried out to keep a dispenser operating within specification."@en ;
+    skos:notation     "SV-MNT" ;
+    owl:versionInfo   "1" .
+
+h2o:preventive-maintenance a skos:Concept ;
+    skos:inScheme   hs:service ;
+    skos:prefLabel  "Preventive Maintenance"@en, "Preventief Onderhoud"@nl ;
+    skos:altLabel   "Scheduled Maintenance"@en, "Planned Maintenance"@en, "PM Visit"@en ;
+    skos:definition "A scheduled visit carrying out the full service routine regardless of reported symptoms."@en ;
+    skos:broader    h2o:maintenance ;
+    skos:notation   "SV-MNT-PRV" ;
+    owl:versionInfo "1" .
+
+h2o:filter-replacement a skos:Concept ;
+    skos:inScheme   hs:service ;
+    skos:prefLabel  "Filter Replacement"@en, "Filtervervanging"@nl ;
+    skos:altLabel   "Filter Change"@en, "Cartridge Change"@en, "Filter Swap"@en ;
+    skos:definition "Removing an exhausted filter and fitting a new one, then flushing and recording the change."@en ;
+    skos:broader    h2o:maintenance ;
+    skos:related    h2o:filter ;
+    skos:notation   "SV-MNT-FLT" ;
+    owl:versionInfo "1" .
+
+h2o:sanitisation a skos:Concept ;
+    skos:inScheme   hs:service ;
+    skos:prefLabel  "Sanitisation"@en, "Sanitatie"@nl ;
+    skos:altLabel   "Sanitization"@en, "Deep Clean"@en, "Disinfection Service"@en ;
+    skos:definition "Chemical or thermal cleaning of the internal waterways and dispense point to remove biofilm."@en ;
+    skos:broader    h2o:maintenance ;
+    skos:notation   "SV-MNT-SAN" ;
+    owl:versionInfo "1" .
+
+h2o:cylinder-exchange a skos:Concept ;
+    skos:inScheme   hs:service ;
+    skos:prefLabel  "Cylinder Exchange"@en, "Cilinderwissel"@nl ;
+    skos:altLabel   "Cylinder Swap"@en, "CO2 Exchange"@en ;
+    skos:definition "Replacing a depleted carbon dioxide cylinder with a charged one and pressure-testing the connection."@en ;
+    skos:broader    h2o:maintenance ;
+    skos:related    h2o:co2-cylinder ;
+    skos:notation   "SV-MNT-CYL" ;
+    owl:versionInfo "1" .
+
+h2o:inspection a skos:Concept ;
+    skos:inScheme   hs:service ;
+    skos:prefLabel  "Inspection"@en, "Inspectie"@nl ;
+    skos:altLabel   "Health Check"@en, "Audit Visit"@en ;
+    skos:definition "A visit that assesses condition and compliance without necessarily replacing anything."@en ;
+    skos:broader    h2o:maintenance ;
+    skos:notation   "SV-MNT-INP" ;
+    owl:versionInfo "1" .
+
+##  Reactive and end of life  #################################################
+
+h2o:repair a skos:Concept ;
+    skos:inScheme     hs:service ;
+    skos:topConceptOf hs:service ;
+    skos:prefLabel    "Repair"@en, "Reparatie"@nl ;
+    skos:altLabel     "Corrective Maintenance"@en, "Breakdown Call"@en, "Callout"@en ;
+    skos:definition   "Unplanned work carried out in response to a reported fault."@en ;
+    skos:related      h2o:fault ;
+    skos:notation     "SV-RPR" ;
+    owl:versionInfo   "1" .
+
+h2o:decommissioning a skos:Concept ;
+    skos:inScheme     hs:service ;
+    skos:topConceptOf hs:service ;
+    skos:prefLabel    "Decommissioning"@en, "Buitengebruikstelling"@nl ;
+    skos:altLabel     "Removal"@en, "Uninstallation"@en, "De-Install"@en ;
+    skos:definition   "Disconnecting and removing a dispenser from a customer location at end of contract or life."@en ;
+    skos:notation     "SV-DEC" ;
+    owl:versionInfo   "1" .

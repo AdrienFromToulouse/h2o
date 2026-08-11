@@ -1,0 +1,110 @@
+{
+  "_comment": [
+    "The document registry from step 1 of the ingestion pipeline",
+    "(docs/adrs/002-ingestion-against-the-vocabulary.md). In a deployment this",
+    "lives in DynamoDB; here it is the file the seeding script loads.",
+    "",
+    "A document is registered and then ingested, never guessed at. doc_version",
+    "travels onto every claim extracted from the document, so an answer can",
+    "always be attributed to a revision.",
+    "",
+    "This corpus is invented. It carries two deliberate contradictions and one",
+    "deliberate vocabulary gap; see checks in scripts/check_corpus.py."
+  ],
+  "documents": [
+    {
+      "filename": "01-installation-manual-v3.md",
+      "doc_type": "installation_manual",
+      "doc_version": "3",
+      "issued": "2023-04-17",
+      "valid_from": "2023-04-17",
+      "valid_to": null,
+      "format": "markdown",
+      "authority": "official",
+      "applies_to": ["FS-500-STL", "FS-500-CHL", "FS-500-SPK"]
+    },
+    {
+      "filename": "02-service-bulletin-SB-2024-03.md",
+      "doc_type": "service_bulletin",
+      "doc_version": "SB-2024-03",
+      "issued": "2024-02-09",
+      "valid_from": "2024-02-09",
+      "valid_to": null,
+      "format": "markdown",
+      "authority": "official",
+      "applies_to": ["FS-500-STL", "FS-500-CHL", "FS-500-SPK"]
+    },
+    {
+      "filename": "03-service-bulletin-SB-2023-11.md",
+      "doc_type": "service_bulletin",
+      "doc_version": "SB-2023-11",
+      "issued": "2023-09-22",
+      "valid_from": "2023-09-22",
+      "valid_to": null,
+      "format": "markdown",
+      "authority": "official",
+      "applies_to": ["FS-500-SPK"]
+    },
+    {
+      "filename": "04-support-faq.md",
+      "doc_type": "support_faq",
+      "doc_version": "7",
+      "issued": "2024-06-03",
+      "valid_from": "2024-06-03",
+      "valid_to": null,
+      "format": "markdown",
+      "authority": "customer_facing",
+      "applies_to": ["FS-500-STL", "FS-500-CHL", "FS-500-SPK"]
+    },
+    {
+      "filename": "05-spec-sheet-FS-500-SPK.html",
+      "doc_type": "spec_sheet",
+      "doc_version": "4",
+      "issued": "2024-03-11",
+      "valid_from": "2024-03-11",
+      "valid_to": null,
+      "format": "html",
+      "authority": "official",
+      "applies_to": ["FS-500-SPK"]
+    },
+    {
+      "filename": "06-support-article-slow-flow.md",
+      "doc_type": "support_article",
+      "doc_version": "2",
+      "issued": "2024-04-30",
+      "valid_from": "2024-04-30",
+      "valid_to": null,
+      "format": "markdown",
+      "authority": "customer_facing",
+      "applies_to": ["FS-500-STL", "FS-500-CHL", "FS-500-SPK"]
+    }
+  ],
+  "seeded_contradictions": [
+    {
+      "subject": "carbon-filter",
+      "predicate": "replacement-interval",
+      "kind": "version_disagreement",
+      "note": "The manual was never revised after the bulletin. Recency would pick the bulletin, but nothing in the data says the manual was withdrawn, so both persist and the conflict is flagged.",
+      "claims": [
+        { "value": "6 months", "source": "01-installation-manual-v3.md", "doc_version": "3" },
+        { "value": "4 months", "source": "02-service-bulletin-SB-2024-03.md", "doc_version": "SB-2024-03" },
+        { "value": "6 months", "source": "05-spec-sheet-FS-500-SPK.html", "doc_version": "4" }
+      ]
+    },
+    {
+      "subject": "fs-500-spk",
+      "predicate": "dispense-rate",
+      "kind": "peer_disagreement",
+      "note": "Two sources six weeks apart. Recency favours the support article; authority favours the spec sheet. The pipeline resolves neither and flags both.",
+      "claims": [
+        { "value": "2.4 L/min", "source": "05-spec-sheet-FS-500-SPK.html", "doc_version": "4" },
+        { "value": "1.8 L/min", "source": "06-support-article-slow-flow.md", "doc_version": "2" }
+      ]
+    }
+  ],
+  "seeded_gap": {
+    "surface_form": "gas bottle",
+    "expected_attachment": "co2-cylinder",
+    "note": "Resolves to nothing until a curator adds it as an alternative term. Every occurrence holds its claim rather than dropping it."
+  }
+}

@@ -1,0 +1,104 @@
+@prefix h2o:  <https://vocab.h2o.example/id/> .
+@prefix hs:   <https://vocab.h2o.example/scheme/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+
+# Treatment: what the dispenser does to the water.
+
+hs:treatment a skos:ConceptScheme ;
+    dct:title       "Treatment"@en, "Waterbehandeling"@nl ;
+    dct:description "Processes applied to feed water between the mains inlet and the tap."@en ;
+    skos:hasTopConcept h2o:purification, h2o:conditioning .
+
+##  Purification  #############################################################
+
+h2o:purification a skos:Concept ;
+    skos:inScheme     hs:treatment ;
+    skos:topConceptOf hs:treatment ;
+    skos:prefLabel    "Purification"@en, "Waterzuivering"@nl ;
+    skos:altLabel     "Water Purification"@en, "Water Treatment"@en ;
+    skos:definition   "The removal of contaminants from feed water to make it safe and pleasant to drink."@en ;
+    skos:notation     "TR-PUR" ;
+    owl:versionInfo   "1" .
+
+h2o:filtration a skos:Concept ;
+    skos:inScheme   hs:treatment ;
+    skos:prefLabel  "Filtration"@en, "Filtratie"@nl ;
+    skos:altLabel   "Filtering"@en ;
+    skos:definition "The removal of particles and dissolved compounds by passing water through a porous medium."@en ;
+    skos:broader    h2o:purification ;
+    skos:related    h2o:filter ;
+    skos:notation   "TR-PUR-FIL" ;
+    owl:versionInfo "1" .
+
+h2o:reverse-osmosis a skos:Concept ;
+    skos:inScheme   hs:treatment ;
+    skos:prefLabel  "Reverse Osmosis"@en, "Omgekeerde Osmose"@nl ;
+    skos:altLabel   "RO"@en, "Osmosis"@en ;
+    skos:definition "The removal of dissolved solids by forcing water through a semi-permeable membrane under pressure."@en ;
+    skos:broader    h2o:purification ;
+    skos:related    h2o:ro-membrane ;
+    skos:notation   "TR-PUR-ROS" ;
+    owl:versionInfo "1" .
+
+h2o:uv-disinfection a skos:Concept ;
+    skos:inScheme   hs:treatment ;
+    skos:prefLabel  "UV Disinfection"@en, "UV-Desinfectie"@nl ;
+    skos:altLabel   "Ultraviolet Treatment"@en, "UV Sterilisation"@en ;
+    skos:definition "The inactivation of micro-organisms by exposing water to ultraviolet light."@en ;
+    skos:broader    h2o:purification ;
+    skos:related    h2o:uv-lamp ;
+    skos:notation   "TR-PUR-UVD" ;
+    owl:versionInfo "1" .
+
+##  Conditioning  #############################################################
+
+h2o:conditioning a skos:Concept ;
+    skos:inScheme     hs:treatment ;
+    skos:topConceptOf hs:treatment ;
+    skos:prefLabel    "Conditioning"@en, "Conditionering"@nl ;
+    skos:altLabel     "Water Conditioning"@en ;
+    skos:definition   "Adjusting the composition or temperature of already-purified water before it is dispensed."@en ;
+    skos:notation     "TR-CND" ;
+    owl:versionInfo   "1" .
+
+h2o:mineralisation a skos:Concept ;
+    skos:inScheme   hs:treatment ;
+    skos:prefLabel  "Mineralisation"@en, "Mineralisatie"@nl ;
+    skos:altLabel   "Remineralisation"@en, "Mineralization"@en ;
+    skos:definition "Reintroducing calcium and magnesium salts into water after treatment has removed them."@en ;
+    skos:broader    h2o:conditioning ;
+    skos:related    h2o:mineral-cartridge ;
+    skos:notation   "TR-CND-MIN" ;
+    owl:versionInfo "1" .
+
+h2o:carbonation a skos:Concept ;
+    skos:inScheme   hs:treatment ;
+    skos:prefLabel  "Carbonation"@en, "Carbonatatie"@nl ;
+    skos:altLabel   "Carbonating"@en, "Sparkling Water Production"@en ;
+    skos:definition "Dissolving carbon dioxide into chilled water under pressure to produce sparkling water."@en ;
+    skos:broader    h2o:conditioning ;
+    skos:related    h2o:carbonator ;
+    skos:notation   "TR-CND-CBN" ;
+    owl:versionInfo "1" .
+
+h2o:chilling a skos:Concept ;
+    skos:inScheme   hs:treatment ;
+    skos:prefLabel  "Chilling"@en, "Koeling"@nl ;
+    skos:altLabel   "Cooling"@en, "Refrigeration"@en ;
+    skos:definition "Lowering the temperature of water to serving temperature before dispensing."@en ;
+    skos:broader    h2o:conditioning ;
+    skos:related    h2o:chiller-block ;
+    skos:notation   "TR-CND-CHL" ;
+    owl:versionInfo "1" .
+
+h2o:heating a skos:Concept ;
+    skos:inScheme   hs:treatment ;
+    skos:prefLabel  "Heating"@en, "Verwarming"@nl ;
+    skos:altLabel   "Boiling"@en ;
+    skos:definition "Raising the temperature of water for hot dispense."@en ;
+    skos:broader    h2o:conditioning ;
+    skos:related    h2o:hot ;
+    skos:notation   "TR-CND-HEA" ;
+    owl:versionInfo "1" .

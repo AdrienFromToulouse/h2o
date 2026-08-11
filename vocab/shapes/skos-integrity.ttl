@@ -1,0 +1,169 @@
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix hsh:  <https://vocab.h2o.example/shape/> .
+
+# The integrity gate, as SHACL shapes.
+# See docs/adrs/005-governance-and-downstream-orchestration.md.
+#
+# These shapes are the contract every publish is validated against, whether it
+# arrives from the curation console or from a git bulk load. They are reviewed
+# in git exactly like the vocabulary they constrain, which is the point: the
+# rules are as governable as the data.
+#
+# Conformance: SHACL Core plus SHACL-SPARQL. SHACL Advanced Features
+# (`sh:rule`) are NOT used and must not be enabled, because rules derive
+# triples and nothing in this system may assert a fact no human authored.
+# Validation itself is side-effect free by specification.
+#
+# `sh:message` strings are written for a domain expert, not an engineer.
+# They are the text ADR-006 requires the console to show verbatim.
+
+hsh:prefixes a owl:Ontology ;
+    sh:declare [
+        sh:prefix    "skos" ;
+        sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI ;
+    ] .
+
+##  Every term  ###############################################################
+
+hsh:Concept a sh:NodeShape ;
+    sh:targetClass skos:Concept ;
+
+    # Check 1. Exactly one name per language.
+    sh:property [
+        sh:path       skos:prefLabel ;
+        sh:minCount   1 ;
+        sh:uniqueLang true ;
+        sh:nodeKind   sh:Literal ;
+        sh:message    "Every term needs a name, and only one name per language." ;
+    ] ;
+
+    # Check 5. A name is not also one of the term's own alternative terms.
+    sh:property [
+        sh:path     skos:prefLabel ;
+        sh:disjoint skos:altLabel ;
+        sh:message  "A term's name cannot also be listed as one of its alternative terms." ;
+    ] ;
+
+    # Every term belongs to exactly one vocabulary.
+    sh:property [
+        sh:path     skos:inScheme ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:class    skos:ConceptScheme ;
+        sh:message  "Every term belongs to exactly one vocabulary." ;
+    ] ;
+
+    # Check 4. Links point at terms that exist.
+    # No maxCount on skos:broader: the model permits more than one parent even
+    # though the review card offers a single Parent field (ADR-006). Git is the
+    # path for what the card cannot express, and the gate must not forbid it.
+    sh:property [
+        sh:path     skos:broader ;
+        sh:class    skos:Concept ;
+        sh:nodeKind sh:IRI ;
+        sh:message  "The parent must be an existing term." ;
+    ] ;
+    sh:property [
+        sh:path     skos:related ;
+        sh:class    skos:Concept ;
+        sh:nodeKind sh:IRI ;
+        sh:message  "Related concepts must be existing terms." ;
+    ] ;
+    sh:property [
+        sh:path     skos:exactMatch ;
+        sh:class    skos:Concept ;
+        sh:nodeKind sh:IRI ;
+        sh:message  "A machine signal must be linked to an existing term." ;
+    ] ;
+    sh:property [
+        sh:path     skos:closeMatch ;
+        sh:class    skos:Concept ;
+        sh:nodeKind sh:IRI ;
+        sh:message  "A machine signal must be linked to an existing term." ;
+    ] ;
+    sh:property [
+        sh:path     skos:broadMatch ;
+        sh:class    skos:Concept ;
+        sh:nodeKind sh:IRI ;
+        sh:message  "A machine signal must be linked to an existing term." ;
+    ] ;
+
+    # A definition is expected but does not block a publish. Machine-side
+    # concepts (vocab/telemetry.ttl) carry a notation and a mapping instead,
+    # and holding up a firmware contract update over prose would be wrong.
+    sh:property [
+        sh:path     skos:definition ;
+        sh:minCount 1 ;
+        sh:severity sh:Warning ;
+        sh:message  "This term has no definition yet." ;
+    ] .
+
+##  Check 3. The parent chain must not loop  ##################################
+#
+# Not expressible in SHACL Core: the specification leaves validation with
+# recursive shapes undefined. A SPARQL-based constraint with a `+` property
+# path is the standard way to say it.
+
+hsh:NoBroaderCycle a sh:NodeShape ;
+    sh:targetClass skos:Concept ;
+    sh:sparql [
+        sh:severity sh:Violation ;
+        sh:prefixes hsh:prefixes ;
+        sh:message  "This term is its own ancestor: following Parent leads back to it." ;
+        sh:select   """
+            SELECT $this
+            WHERE {
+                $this skos:broader+ $this .
+            }
+        """ ;
+    ] .
+
+##  Check 2. No two terms in one vocabulary claim the same label  #############
+#
+# CAVEAT, and the reason the Python resolver-parity check still exists:
+# SPARQL can only fold case. The resolver additionally strips accents and
+# punctuation (NFKD), so "CO₂ Cylinder" and "CO2 Cylinder" collide for the
+# resolver but look distinct here. This shape catches the common case; it is
+# not a substitute for checking against the real normalisation function.
+
+hsh:NoLabelCollision a sh:NodeShape ;
+    sh:targetClass skos:Concept ;
+    sh:sparql [
+        sh:severity sh:Violation ;
+        sh:prefixes hsh:prefixes ;
+        sh:message  "The label {?label} is already used by another term in the same vocabulary." ;
+        sh:select   """
+            SELECT $this ?label
+            WHERE {
+                $this  skos:inScheme ?scheme .
+                $this  ?p1 ?l1 .
+                FILTER (?p1 IN (skos:prefLabel, skos:altLabel, skos:hiddenLabel))
+                ?other skos:inScheme ?scheme .
+                ?other ?p2 ?l2 .
+                FILTER (?p2 IN (skos:prefLabel, skos:altLabel, skos:hiddenLabel))
+                FILTER (?other != $this)
+                FILTER (LCASE(STR(?l1)) = LCASE(STR(?l2)))
+                BIND (STR(?l1) AS ?label)
+            }
+        """ ;
+    ] .
+
+##  Check 6. Orphans, as a warning  ###########################################
+
+hsh:NotOrphaned a sh:NodeShape ;
+    sh:targetClass skos:Concept ;
+    sh:sparql [
+        sh:severity sh:Warning ;
+        sh:prefixes hsh:prefixes ;
+        sh:message  "This term has no parent and is not a top-level term of its vocabulary." ;
+        sh:select   """
+            SELECT $this
+            WHERE {
+                FILTER NOT EXISTS { $this skos:broader     ?parent }
+                FILTER NOT EXISTS { $this skos:topConceptOf ?scheme }
+            }
+        """ ;
+    ] .

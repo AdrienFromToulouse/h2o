@@ -1,0 +1,66 @@
+@prefix h2o:  <https://vocab.h2o.example/id/> .
+@prefix hs:   <https://vocab.h2o.example/scheme/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+
+# Sustainability: the measures a customer is reported against.
+# A flat facet of measures, each with a defined unit.
+
+hs:sustainability a skos:ConceptScheme ;
+    dct:title       "Sustainability"@en, "Duurzaamheid"@nl ;
+    dct:description "Environmental and consumption measures derived from dispenser usage."@en ;
+    skos:hasTopConcept h2o:water-dispensed, h2o:single-use-bottles-avoided,
+                       h2o:co2e-avoided, h2o:energy-consumed,
+                       h2o:filter-waste-avoided .
+
+h2o:water-dispensed a skos:Concept ;
+    skos:inScheme     hs:sustainability ;
+    skos:topConceptOf hs:sustainability ;
+    skos:prefLabel    "Water Dispensed"@en, "Getapt Water"@nl ;
+    skos:altLabel     "Volume Dispensed"@en, "Water Consumption"@en ;
+    skos:definition   "Total volume of water served by a dispenser over a period, measured in litres."@en ;
+    skos:scopeNote    "The base measure from which the avoided-impact measures are derived."@en ;
+    skos:notation     "SU-WTR" ;
+    owl:versionInfo   "1" .
+
+h2o:single-use-bottles-avoided a skos:Concept ;
+    skos:inScheme     hs:sustainability ;
+    skos:topConceptOf hs:sustainability ;
+    skos:prefLabel    "Single-Use Bottles Avoided"@en, "Vermeden Wegwerpflessen"@nl ;
+    skos:altLabel     "Plastic Bottles Saved"@en, "Bottles Avoided"@en ;
+    skos:definition   "Estimated count of single-use plastic bottles not purchased, derived from dispensed volume and a reference bottle size."@en ;
+    skos:scopeNote    "An estimate, not a measurement. The reference bottle size must be stated wherever this figure is published."@en ;
+    skos:related      h2o:water-dispensed ;
+    skos:notation     "SU-BTL" ;
+    owl:versionInfo   "1" .
+
+h2o:co2e-avoided a skos:Concept ;
+    skos:inScheme     hs:sustainability ;
+    skos:topConceptOf hs:sustainability ;
+    skos:prefLabel    "CO₂e Avoided"@en, "Vermeden CO₂e"@nl ;
+    skos:altLabel     "Carbon Saved"@en, "Emissions Avoided"@en, "Carbon Footprint Reduction"@en ;
+    skos:definition   "Estimated carbon dioxide equivalent emissions not incurred by avoiding bottled water, in kilograms."@en ;
+    skos:scopeNote    "An estimate derived from bottles avoided and a published emissions factor; the factor must accompany the figure."@en ;
+    skos:related      h2o:single-use-bottles-avoided ;
+    skos:notation     "SU-CO2" ;
+    owl:versionInfo   "1" .
+
+h2o:energy-consumed a skos:Concept ;
+    skos:inScheme     hs:sustainability ;
+    skos:topConceptOf hs:sustainability ;
+    skos:prefLabel    "Energy Consumed"@en, "Energieverbruik"@nl ;
+    skos:altLabel     "Power Consumption"@en, "Electricity Used"@en ;
+    skos:definition   "Electrical energy drawn by a dispenser over a period, in kilowatt-hours."@en ;
+    skos:notation     "SU-ENR" ;
+    owl:versionInfo   "1" .
+
+h2o:filter-waste-avoided a skos:Concept ;
+    skos:inScheme     hs:sustainability ;
+    skos:topConceptOf hs:sustainability ;
+    skos:prefLabel    "Filter Waste Avoided"@en, "Vermeden Filterafval"@nl ;
+    skos:altLabel     "Cartridge Waste Avoided"@en ;
+    skos:definition   "Mass of filter media diverted from landfill through the take-back and recycling programme, in kilograms."@en ;
+    skos:related      h2o:filter-replacement ;
+    skos:notation     "SU-FWA" ;
+    owl:versionInfo   "1" .

@@ -1,0 +1,105 @@
+@prefix h2o:  <https://vocab.h2o.example/id/> .
+@prefix hs:   <https://vocab.h2o.example/scheme/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+
+# Fault: the ways a dispenser fails, as reported by users or by firmware.
+#
+# NOTE: this scheme deliberately contains NO concept for limescale or scale
+# build-up. It is the starting condition for the telemetry-driven
+# demonstration loop in docs/adrs/003-otel-fleet-signals-to-skos.md, where
+# firmware reports `fault.type=scale_buildup` and it maps to nothing.
+# A test asserts the absence. Do not "helpfully" add it.
+
+hs:fault a skos:ConceptScheme ;
+    dct:title       "Fault"@en, "Storingen"@nl ;
+    dct:description "Symptoms and failure modes reported by users, technicians, or dispenser firmware."@en ;
+    skos:hasTopConcept h2o:fault .
+
+h2o:fault a skos:Concept ;
+    skos:inScheme     hs:fault ;
+    skos:topConceptOf hs:fault ;
+    skos:prefLabel    "Fault"@en, "Storing"@nl ;
+    skos:altLabel     "Failure"@en, "Problem"@en, "Issue"@en ;
+    skos:definition   "Any condition in which a dispenser does not operate as specified."@en ;
+    skos:notation     "FT" ;
+    owl:versionInfo   "1" .
+
+h2o:leak a skos:Concept ;
+    skos:inScheme   hs:fault ;
+    skos:prefLabel  "Leak"@en, "Lekkage"@nl ;
+    skos:altLabel   "Water Leak"@en, "Dripping"@en, "Water Escape"@en ;
+    skos:definition "Water escaping from the dispenser or its connections outside the intended dispense path."@en ;
+    skos:broader    h2o:fault ;
+    skos:related    h2o:leak-sensor ;
+    skos:notation   "FT-LEK" ;
+    owl:versionInfo "1" .
+
+h2o:low-flow a skos:Concept ;
+    skos:inScheme   hs:fault ;
+    skos:prefLabel  "Low Flow"@en, "Lage Doorstroming"@nl ;
+    skos:altLabel   "Slow Dispense"@en, "Reduced Flow"@en, "Weak Flow"@en ;
+    skos:definition "Water dispensing at a rate below specification, whether reported by a user or detected by the flow meter."@en ;
+    skos:broader    h2o:fault ;
+    skos:related    h2o:flow-meter ;
+    skos:notation   "FT-LFL" ;
+    owl:versionInfo "1" .
+
+h2o:no-cooling a skos:Concept ;
+    skos:inScheme   hs:fault ;
+    skos:prefLabel  "No Cooling"@en, "Geen Koeling"@nl ;
+    skos:altLabel   "Warm Water"@en, "Not Chilling"@en, "Cooling Failure"@en ;
+    skos:definition "Water dispensed above the chilled serving temperature despite the chilled option being selected."@en ;
+    skos:broader    h2o:fault ;
+    skos:related    h2o:chiller-block ;
+    skos:notation   "FT-NCL" ;
+    owl:versionInfo "1" .
+
+h2o:no-carbonation a skos:Concept ;
+    skos:inScheme   hs:fault ;
+    skos:prefLabel  "No Carbonation"@en, "Geen Carbonatatie"@nl ;
+    skos:altLabel   "Flat Sparkling"@en, "Not Fizzy"@en, "Carbonation Failure"@en ;
+    skos:definition "Sparkling water dispensing with little or no dissolved carbon dioxide."@en ;
+    skos:broader    h2o:fault ;
+    skos:related    h2o:carbonator ;
+    skos:notation   "FT-NCB" ;
+    owl:versionInfo "1" .
+
+h2o:filter-expired a skos:Concept ;
+    skos:inScheme   hs:fault ;
+    skos:prefLabel  "Filter Expired"@en, "Filter Verlopen"@nl ;
+    skos:altLabel   "Filter Overdue"@en, "Filter End of Life"@en ;
+    skos:definition "A filter that has passed its rated volume or service interval and requires replacement."@en ;
+    skos:broader    h2o:fault ;
+    skos:related    h2o:filter-replacement ;
+    skos:notation   "FT-FEX" ;
+    owl:versionInfo "1" .
+
+h2o:taste-complaint a skos:Concept ;
+    skos:inScheme   hs:fault ;
+    skos:prefLabel  "Taste Complaint"@en, "Smaakklacht"@nl ;
+    skos:altLabel   "Off Taste"@en, "Bad Taste"@en, "Odour Complaint"@en ;
+    skos:definition "A user report that dispensed water tastes or smells wrong, without a mechanical symptom."@en ;
+    skos:broader    h2o:fault ;
+    skos:related    h2o:carbon-filter ;
+    skos:notation   "FT-TST" ;
+    owl:versionInfo "1" .
+
+h2o:no-power a skos:Concept ;
+    skos:inScheme   hs:fault ;
+    skos:prefLabel  "No Power"@en, "Geen Voeding"@nl ;
+    skos:altLabel   "Dead Unit"@en, "Won't Switch On"@en ;
+    skos:definition "The dispenser shows no signs of operation and does not respond to the control panel."@en ;
+    skos:broader    h2o:fault ;
+    skos:notation   "FT-NPW" ;
+    owl:versionInfo "1" .
+
+h2o:excessive-noise a skos:Concept ;
+    skos:inScheme   hs:fault ;
+    skos:prefLabel  "Excessive Noise"@en, "Overmatig Geluid"@nl ;
+    skos:altLabel   "Loud Operation"@en, "Rattling"@en, "Humming"@en ;
+    skos:definition "Operating noise materially above normal, typically from the chiller or carbonator pump."@en ;
+    skos:broader    h2o:fault ;
+    skos:notation   "FT-NOI" ;
+    owl:versionInfo "1" .

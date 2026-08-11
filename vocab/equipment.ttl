@@ -1,0 +1,208 @@
+@prefix h2o:  <https://vocab.h2o.example/id/> .
+@prefix hs:   <https://vocab.h2o.example/scheme/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+
+# Equipment: dispensers and the components they are built from.
+#
+# Authored by domain experts. See docs/adrs/001-human-authored-skos-vocabulary.md.
+# The business schemes are facets of one vocabulary, so skos:related crosses
+# between them freely. skos:exactMatch / closeMatch are reserved for the
+# genuinely separate machine-side scheme (vocab/telemetry.ttl).
+
+hs:equipment a skos:ConceptScheme ;
+    dct:title       "Equipment"@en, "Apparatuur"@nl ;
+    dct:description "Dispenser models and the replaceable and fixed components they contain."@en ;
+    skos:hasTopConcept h2o:dispenser, h2o:component .
+
+##  Dispensers  ###############################################################
+
+h2o:dispenser a skos:Concept ;
+    skos:inScheme     hs:equipment ;
+    skos:topConceptOf hs:equipment ;
+    skos:prefLabel    "Dispenser"@en, "Waterdispenser"@nl ;
+    skos:altLabel     "Water Dispenser"@en, "Machine"@en, "Unit"@en ;
+    skos:definition   "A connected appliance that treats mains water and dispenses it on demand in one or more forms."@en ;
+    skos:notation     "EQ-DSP" ;
+    owl:versionInfo   "1" .
+
+h2o:countertop-dispenser a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "Countertop Dispenser"@en, "Tafelmodel Dispenser"@nl ;
+    skos:altLabel   "Countertop Unit"@en, "Tabletop Dispenser"@en ;
+    skos:definition "A dispenser designed to stand on a worktop, drawing mains water from a nearby supply point."@en ;
+    skos:broader    h2o:dispenser ;
+    skos:notation   "EQ-DSP-CTR" ;
+    owl:versionInfo "1" .
+
+h2o:freestanding-dispenser a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "Freestanding Dispenser"@en, "Vrijstaande Dispenser"@nl ;
+    skos:altLabel   "Floorstanding Dispenser"@en, "Floor Unit"@en ;
+    skos:definition "A full-height dispenser that stands on the floor, typically serving communal areas."@en ;
+    skos:broader    h2o:dispenser ;
+    skos:notation   "EQ-DSP-FSD" ;
+    owl:versionInfo "1" .
+
+h2o:undercounter-dispenser a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "Undercounter Dispenser"@en, "Onderbouwdispenser"@nl ;
+    skos:altLabel   "Under-Sink Unit"@en, "Built-In Dispenser"@en ;
+    skos:definition "A dispenser installed below the worktop, with only the tap visible above it."@en ;
+    skos:broader    h2o:dispenser ;
+    skos:notation   "EQ-DSP-UCT" ;
+    owl:versionInfo "1" .
+
+##  Components  ###############################################################
+
+h2o:component a skos:Concept ;
+    skos:inScheme     hs:equipment ;
+    skos:topConceptOf hs:equipment ;
+    skos:prefLabel    "Component"@en, "Onderdeel"@nl ;
+    skos:altLabel     "Part"@en ;
+    skos:definition   "A replaceable or serviceable element of a dispenser."@en ;
+    skos:notation     "EQ-CMP" ;
+    owl:versionInfo   "1" .
+
+h2o:filter a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "Filter"@en, "Filter"@nl ;
+    skos:altLabel   "Water Filter"@en ;
+    skos:definition "A consumable component that removes contaminants from the feed water as it passes through."@en ;
+    skos:broader    h2o:component ;
+    skos:related    h2o:filtration ;
+    skos:notation   "EQ-FLT" ;
+    owl:versionInfo "1" .
+
+h2o:carbon-filter a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "Carbon Filter"@en, "Koolstoffilter"@nl ;
+    skos:altLabel   "Carbon Cartridge"@en, "Filter Cartridge"@en, "Activated Carbon Filter"@en ;
+    skos:definition "A filter using activated carbon to reduce chlorine, taste and odour compounds in the feed water."@en ;
+    skos:broader    h2o:filter ;
+    skos:related    h2o:purification ;
+    skos:notation   "EQ-FLT-CARB" ;
+    owl:versionInfo "1" .
+
+h2o:sediment-filter a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "Sediment Filter"@en, "Sedimentfilter"@nl ;
+    skos:altLabel   "Pre-Filter"@en, "Particle Filter"@en ;
+    skos:definition "A filter that removes suspended particles such as grit, rust and silt before the water reaches finer stages."@en ;
+    skos:broader    h2o:filter ;
+    skos:related    h2o:filtration ;
+    skos:notation   "EQ-FLT-SED" ;
+    owl:versionInfo "1" .
+
+h2o:ro-membrane a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "RO Membrane"@en, "RO-Membraan"@nl ;
+    skos:altLabel   "Reverse Osmosis Membrane"@en, "Osmosis Membrane"@en ;
+    skos:definition "A semi-permeable membrane that removes dissolved solids by forcing water through under pressure."@en ;
+    skos:broader    h2o:filter ;
+    skos:related    h2o:reverse-osmosis ;
+    skos:notation   "EQ-FLT-ROM" ;
+    owl:versionInfo "1" .
+
+h2o:uv-lamp a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "UV Lamp"@en, "UV-Lamp"@nl ;
+    skos:altLabel   "Ultraviolet Lamp"@en, "UV Emitter"@en ;
+    skos:definition "A component that exposes water to ultraviolet light in order to inactivate micro-organisms."@en ;
+    skos:broader    h2o:component ;
+    skos:related    h2o:uv-disinfection ;
+    skos:notation   "EQ-CMP-UVL" ;
+    owl:versionInfo "1" .
+
+# NOTE: this concept deliberately has no "gas bottle" alternative label.
+# It is the starting condition for the chat-driven demonstration loop
+# described in docs/adrs/004-vocabulary-gap-queue.md. A test asserts the
+# absence. Do not "helpfully" add it.
+h2o:co2-cylinder a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "CO₂ Cylinder"@en, "CO₂-Cilinder"@nl ;
+    skos:altLabel   "Carbonation Cylinder"@en, "Sparkling Cylinder"@en ;
+    skos:definition "A pressurised cylinder supplying carbon dioxide to the carbonator for producing sparkling water."@en ;
+    skos:broader    h2o:component ;
+    skos:related    h2o:carbonation ;
+    skos:notation   "EQ-CMP-CO2" ;
+    owl:versionInfo "1" .
+
+h2o:mineral-cartridge a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "Mineral Cartridge"@en, "Mineralenpatroon"@nl ;
+    skos:altLabel   "Mineraliser"@en, "Remineralisation Cartridge"@en ;
+    skos:definition "A cartridge that reintroduces calcium and magnesium salts into water after treatment has stripped them."@en ;
+    skos:broader    h2o:component ;
+    skos:related    h2o:mineralisation ;
+    skos:notation   "EQ-CMP-MIN" ;
+    owl:versionInfo "1" .
+
+h2o:flavour-pod a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "Flavour Pod"@en, "Smaakcapsule"@nl ;
+    skos:altLabel   "Flavour Cartridge"@en, "Syrup Pod"@en ;
+    skos:definition "A consumable containing concentrated flavouring that is dosed into the dispensed water."@en ;
+    skos:broader    h2o:component ;
+    skos:related    h2o:flavoured ;
+    skos:notation   "EQ-CMP-FLP" ;
+    owl:versionInfo "1" .
+
+h2o:chiller-block a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "Chiller Block"@en, "Koelblok"@nl ;
+    skos:altLabel   "Cooling Block"@en, "Chiller"@en ;
+    skos:definition "The refrigeration assembly that brings dispensed water down to serving temperature."@en ;
+    skos:broader    h2o:component ;
+    skos:related    h2o:chilling ;
+    skos:notation   "EQ-CMP-CHL" ;
+    owl:versionInfo "1" .
+
+h2o:carbonator a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "Carbonator"@en, "Carbonator"@nl ;
+    skos:altLabel   "Carbonation Unit"@en ;
+    skos:definition "The assembly that dissolves carbon dioxide into chilled water under pressure."@en ;
+    skos:broader    h2o:component ;
+    skos:related    h2o:carbonation ;
+    skos:notation   "EQ-CMP-CBN" ;
+    owl:versionInfo "1" .
+
+h2o:tap a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "Tap"@en, "Kraan"@nl ;
+    skos:altLabel   "Faucet"@en, "Dispense Point"@en, "Outlet"@en ;
+    skos:definition "The user-facing outlet through which treated water is dispensed."@en ;
+    skos:broader    h2o:component ;
+    skos:notation   "EQ-CMP-TAP" ;
+    owl:versionInfo "1" .
+
+h2o:drip-tray a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "Drip Tray"@en, "Lekbak"@nl ;
+    skos:altLabel   "Spill Tray"@en ;
+    skos:definition "A removable tray beneath the tap that collects spillage and overflow."@en ;
+    skos:broader    h2o:component ;
+    skos:notation   "EQ-CMP-DRP" ;
+    owl:versionInfo "1" .
+
+h2o:flow-meter a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "Flow Meter"@en, "Debietmeter"@nl ;
+    skos:altLabel   "Flow Sensor"@en ;
+    skos:definition "A sensor measuring the volume and rate of water passing through the dispenser."@en ;
+    skos:broader    h2o:component ;
+    skos:related    h2o:water-dispensed ;
+    skos:notation   "EQ-CMP-FLM" ;
+    owl:versionInfo "1" .
+
+h2o:leak-sensor a skos:Concept ;
+    skos:inScheme   hs:equipment ;
+    skos:prefLabel  "Leak Sensor"@en, "Leksensor"@nl ;
+    skos:altLabel   "Water Detector"@en ;
+    skos:definition "A sensor that detects water escaping inside the cabinet and triggers a shut-off."@en ;
+    skos:broader    h2o:component ;
+    skos:related    h2o:leak ;
+    skos:notation   "EQ-CMP-LKS" ;
+    owl:versionInfo "1" .

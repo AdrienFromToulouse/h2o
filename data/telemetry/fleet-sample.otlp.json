@@ -1,0 +1,216 @@
+{
+  "_comment": [
+    "INVENTED FIXTURE DATA. See docs/adrs/003-otel-fleet-signals-to-skos.md.",
+    "service.name, service.namespace, deployment.environment, device.id and",
+    "device.model.identifier are real OpenTelemetry semantic conventions.",
+    "Everything else was authored for this demonstrator: site.id,",
+    "component.type, component.serial, water.output, fault.code, fault.type,",
+    "service.type, the E-codes, and every dispenser.* instrument. There is no",
+    "semantic convention for water dispensers.",
+    "",
+    "fault.type=scale_buildup / fault.code=E42 map to NOTHING on purpose. They",
+    "are the unmapped signal that opens the telemetry-driven curation loop."
+  ],
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name",            "value": { "stringValue": "water-dispenser" } },
+          { "key": "service.namespace",       "value": { "stringValue": "fleet" } },
+          { "key": "deployment.environment",  "value": { "stringValue": "production" } },
+          { "key": "device.id",               "value": { "stringValue": "WD-4412" } },
+          { "key": "device.model.identifier", "value": { "stringValue": "FS-500-SPK" } },
+          { "key": "site.id",                 "value": { "stringValue": "customer-1183/floor-2" } }
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "scope": { "name": "dispenser.firmware", "version": "4.11.2" },
+          "metrics": [
+            {
+              "name": "dispenser.filter.life_remaining",
+              "unit": "%",
+              "gauge": {
+                "dataPoints": [
+                  {
+                    "asDouble": 12.5,
+                    "timeUnixNano": "1754870400000000000",
+                    "attributes": [
+                      { "key": "component.type",   "value": { "stringValue": "carbon_filter" } },
+                      { "key": "component.serial", "value": { "stringValue": "CF-88213" } }
+                    ]
+                  },
+                  {
+                    "asDouble": 61.0,
+                    "timeUnixNano": "1754870400000000000",
+                    "attributes": [
+                      { "key": "component.type",   "value": { "stringValue": "sediment_filter" } },
+                      { "key": "component.serial", "value": { "stringValue": "SF-20551" } }
+                    ]
+                  },
+                  {
+                    "asDouble": 78.25,
+                    "timeUnixNano": "1754870400000000000",
+                    "attributes": [
+                      { "key": "component.type",   "value": { "stringValue": "mineral_cartridge" } },
+                      { "key": "component.serial", "value": { "stringValue": "MC-10394" } }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "dispenser.co2.pressure",
+              "unit": "bar",
+              "gauge": {
+                "dataPoints": [
+                  {
+                    "asDouble": 8.4,
+                    "timeUnixNano": "1754870400000000000",
+                    "attributes": [
+                      { "key": "component.type",   "value": { "stringValue": "co2_cylinder" } },
+                      { "key": "component.serial", "value": { "stringValue": "CY-77120" } }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "dispenser.uv.lamp_hours",
+              "unit": "h",
+              "sum": {
+                "isMonotonic": true,
+                "aggregationTemporality": 2,
+                "dataPoints": [
+                  {
+                    "asDouble": 6120.0,
+                    "timeUnixNano": "1754870400000000000",
+                    "attributes": [
+                      { "key": "component.type", "value": { "stringValue": "uv_lamp" } }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "dispenser.water.dispensed",
+              "unit": "L",
+              "sum": {
+                "isMonotonic": true,
+                "aggregationTemporality": 2,
+                "dataPoints": [
+                  {
+                    "asDouble": 1842.0,
+                    "timeUnixNano": "1754870400000000000",
+                    "attributes": [
+                      { "key": "water.output", "value": { "stringValue": "sparkling" } }
+                    ]
+                  },
+                  {
+                    "asDouble": 4109.5,
+                    "timeUnixNano": "1754870400000000000",
+                    "attributes": [
+                      { "key": "water.output", "value": { "stringValue": "chilled" } }
+                    ]
+                  },
+                  {
+                    "asDouble": 903.0,
+                    "timeUnixNano": "1754870400000000000",
+                    "attributes": [
+                      { "key": "water.output", "value": { "stringValue": "still" } }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "dispenser.bottles_avoided",
+              "unit": "{bottle}",
+              "sum": {
+                "isMonotonic": true,
+                "aggregationTemporality": 2,
+                "dataPoints": [
+                  { "asDouble": 13709.0, "timeUnixNano": "1754870400000000000", "attributes": [] }
+                ]
+              }
+            },
+            {
+              "name": "dispenser.energy.consumed",
+              "unit": "kW.h",
+              "sum": {
+                "isMonotonic": true,
+                "aggregationTemporality": 2,
+                "dataPoints": [
+                  { "asDouble": 418.7, "timeUnixNano": "1754870400000000000", "attributes": [] }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name",            "value": { "stringValue": "water-dispenser" } },
+          { "key": "service.namespace",       "value": { "stringValue": "fleet" } },
+          { "key": "deployment.environment",  "value": { "stringValue": "production" } },
+          { "key": "device.id",               "value": { "stringValue": "WD-4412" } },
+          { "key": "device.model.identifier", "value": { "stringValue": "FS-500-SPK" } },
+          { "key": "site.id",                 "value": { "stringValue": "customer-1183/floor-2" } }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": { "name": "dispenser.firmware", "version": "4.11.2" },
+          "logRecords": [
+            {
+              "timeUnixNano": "1754864000000000000",
+              "severityText": "WARN",
+              "body": { "stringValue": "flow below threshold" },
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "dispenser.fault" } },
+                { "key": "fault.code", "value": { "stringValue": "E17" } },
+                { "key": "fault.type", "value": { "stringValue": "low_flow" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1754866700000000000",
+              "severityText": "ERROR",
+              "body": { "stringValue": "chiller failed to reach setpoint" },
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "dispenser.fault" } },
+                { "key": "fault.code", "value": { "stringValue": "E23" } },
+                { "key": "fault.type", "value": { "stringValue": "no_cooling" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1754868100000000000",
+              "severityText": "WARN",
+              "body": { "stringValue": "heat exchanger deposit index above limit" },
+              "_comment": "UNMAPPED ON PURPOSE. Opens the telemetry-driven curation loop.",
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "dispenser.fault" } },
+                { "key": "fault.code", "value": { "stringValue": "E42" } },
+                { "key": "fault.type", "value": { "stringValue": "scale_buildup" } },
+                { "key": "occurrence.count", "value": { "intValue": "214" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1754869900000000000",
+              "severityText": "INFO",
+              "body": { "stringValue": "filter replaced by technician" },
+              "attributes": [
+                { "key": "event.name",     "value": { "stringValue": "dispenser.service" } },
+                { "key": "service.type",   "value": { "stringValue": "filter_replacement" } },
+                { "key": "component.type", "value": { "stringValue": "carbon_filter" } }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
