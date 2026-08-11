@@ -1,0 +1,36 @@
+# Every label in the published vocabulary, with its concept, scheme and kind.
+#
+# This compiles the resolver index (ADR-005). It takes no parameters, and that
+# is the point: the index is built from the whole published graph in one pass,
+# then queried in-process as a dictionary. Resolution runs on every user turn
+# and every ingested mention, so it must never be a graph round trip.
+#
+# ORDER BY is not cosmetic. The index is content-addressed by a hash of what it
+# was built from, and an unordered result set would produce a different
+# watermark for an unchanged graph, which would make staleness undetectable.
+
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+SELECT ?concept ?scheme ?label ?language ?label_type
+WHERE {
+  GRAPH <h2o:graph/published> {
+    ?concept a skos:Concept ;
+             skos:inScheme ?scheme .
+    {
+      ?concept skos:prefLabel ?label .
+      BIND ("pref" AS ?label_type)
+    }
+    UNION
+    {
+      ?concept skos:altLabel ?label .
+      BIND ("alt" AS ?label_type)
+    }
+    UNION
+    {
+      ?concept skos:hiddenLabel ?label .
+      BIND ("hidden" AS ?label_type)
+    }
+    BIND (LANG(?label) AS ?language)
+  }
+}
+ORDER BY ?concept ?label_type ?language ?label

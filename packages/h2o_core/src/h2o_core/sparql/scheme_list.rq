@@ -1,0 +1,22 @@
+# The vocabularies, with their titles and how many terms each holds.
+#
+# Backs the console's landing page (ADR-006). "Vocabulary" is the UI word for
+# skos:ConceptScheme; the mapping lives in the frontend's label table, not here.
+
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX dct:  <http://purl.org/dc/terms/>
+
+SELECT ?scheme ?title ?language ?description (COUNT(DISTINCT ?concept) AS ?concept_count)
+WHERE {
+  GRAPH <h2o:graph/published> {
+    ?scheme a skos:ConceptScheme .
+    OPTIONAL {
+      ?scheme dct:title ?title .
+      BIND (LANG(?title) AS ?language)
+    }
+    OPTIONAL { ?scheme dct:description ?description }
+    OPTIONAL { ?concept skos:inScheme ?scheme }
+  }
+}
+GROUP BY ?scheme ?title ?language ?description
+ORDER BY ?scheme ?language

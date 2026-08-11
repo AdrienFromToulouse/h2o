@@ -1,0 +1,24 @@
+# The top terms of one vocabulary.
+#
+# Backs browse_scheme with no root, and the console's scheme tree. Browsing
+# beneath a term is concept_children.rq: a different starting point is a
+# different question, so it is a different file rather than an optional clause
+# here (ADR-001).
+
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+SELECT ?concept ?pref_label ?definition (COUNT(DISTINCT ?child) AS ?child_count)
+WHERE {
+  GRAPH <h2o:graph/published> {
+    ?concept skos:topConceptOf {{scheme}} ;
+             skos:prefLabel ?pref_label .
+    FILTER (LANG(?pref_label) = "en")
+    OPTIONAL {
+      ?concept skos:definition ?definition .
+      FILTER (LANG(?definition) = "en")
+    }
+    OPTIONAL { ?child skos:broader ?concept }
+  }
+}
+GROUP BY ?concept ?pref_label ?definition
+ORDER BY ?pref_label

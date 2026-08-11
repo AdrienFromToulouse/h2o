@@ -1,0 +1,42 @@
+# Everything the vocabulary says directly about one term.
+#
+# Backs get_concept and the console's review card (ADR-006). The row set is
+# deliberately wide and sparse rather than several round trips: a review card
+# renders all of these fields at once, and a query per relation would multiply
+# latency by the number of rows on the card.
+#
+# Children are NOT here. skos:narrower is an inverse relation and needs its own
+# graph pattern, so it lives in concept_children.rq rather than being bolted on
+# as a UNION arm that has to fake the shape of this row set.
+#
+# Deprecation comes back alongside the rest, so a caller cannot read a
+# tombstoned concept as live by forgetting to ask for it. ADR-005: concepts are
+# never hard-deleted, they are marked and point at a replacement, so the agent
+# can say "that term was retired in favour of X" rather than failing to find it.
+
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+PREFIX dct:  <http://purl.org/dc/terms/>
+
+SELECT ?predicate ?value ?language ?target_label
+WHERE {
+  GRAPH <h2o:graph/published> {
+    {{concept}} a skos:Concept ;
+                ?predicate ?value .
+    FILTER (?predicate IN (
+      skos:prefLabel, skos:altLabel, skos:hiddenLabel, skos:definition,
+      skos:notation, skos:scopeNote, skos:changeNote, skos:inScheme,
+      skos:topConceptOf, skos:broader, skos:related,
+      owl:versionInfo, owl:deprecated,
+      dct:modified, dct:contributor, dct:isReplacedBy
+    ))
+    BIND (LANG(?value) AS ?language)
+    # The preferred label of a relation's target, so a picker can show "Filter"
+    # rather than the slug the interface has promised never to display.
+    OPTIONAL {
+      ?value skos:prefLabel ?target_label .
+      FILTER (LANG(?target_label) = "en")
+    }
+  }
+}
+ORDER BY ?predicate ?language ?value

@@ -1,0 +1,32 @@
+version = 0.1
+
+# SAM resolves samconfig.toml relative to the template, and `sam deploy` picks
+# up .aws-sam/build/template.yaml relative to the working directory, so build
+# and deploy must both run from infra/cloudformation. The Makefile's sam-build
+# and deploy-api targets both cd here for that reason.
+
+[default.global.parameters]
+region = "eu-west-1"
+profile = "personal"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.validate.parameters]
+lint = true
+
+[prod.global.parameters]
+region = "eu-west-1"
+profile = "personal"
+
+[prod.deploy.parameters]
+stack_name = "h2o-prod-api"
+region = "eu-west-1"
+profile = "personal"
+resolve_s3 = true
+s3_prefix = "h2o-prod-api"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "Env=prod"
+no_fail_on_empty_changeset = true
+confirm_changeset = false

@@ -12,7 +12,7 @@ CFN      = infra/cloudformation
 
 .PHONY: help install lock lint format typecheck test check check-vocab check-corpus cfn-lint \
         deploy-data-plane deploy-graph deploy-data deploy-telemetry deploy-orchestration \
-        deploy-frontend outputs
+        deploy-frontend outputs seed-graph dev-api api-reqs sam-build deploy-api clean
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -35,7 +35,7 @@ format:  ## Apply Ruff formatting and autofixes
 	uv run ruff format .
 
 typecheck:  ## Mypy over the source trees
-	uv run mypy packages/h2o_core/src
+	uv run mypy packages/h2o_core/src apps/api/h2o_api
 
 test:  ## Every Python suite. Fakes only: no AWS calls, no network.
 	uv run pytest
@@ -55,6 +55,37 @@ check-corpus:  ## Registry, seeded contradictions, gap counts, the HTML rule
 
 cfn-lint:  ## Validate every CloudFormation template
 	@test -d $(CFN) && uv run cfn-lint $(CFN)/*.yaml || echo "  (no templates yet)"
+
+seed-graph: check-vocab  ## Load vocab/*.ttl into h2o:graph/published (gated first)
+	H2O_ENV=$(ENV) AWS_REGION=$(REGION) uv run python scripts/seed_graph.py
+
+# --------------------------------------------------------------- local serving
+# These call real AWS. `check` is the only offline target.
+
+dev-api:  ## Serve the vocabulary API on :8085 (real S3, DynamoDB, Bedrock)
+	cd apps/api && H2O_ENV=$(ENV) AWS_REGION=$(REGION) \
+		uv run uvicorn h2o_api.app:app --reload --port 8085
+
+# ------------------------------------------------------------------ packaging
+
+api-reqs:  ## Stage the Lambda's third-party deps and the h2o_core wheel
+	uv export --frozen --no-dev --no-emit-workspace --package api -o apps/api/requirements.txt
+	@grep -q '^h2o-core' apps/api/requirements.txt \
+		&& { echo "error: h2o-core must not be in requirements.txt (it ships as a wheel)"; exit 1; } \
+		|| true
+	rm -rf apps/api/vendor
+	uv build --wheel packages/h2o_core -o apps/api/vendor
+
+# SAM resolves samconfig.toml next to the template, and sam deploy reads
+# .aws-sam/build/ relative to cwd, so build and deploy share a directory.
+sam-build: api-reqs  ## Build the Lambda bundle (arm64 manylinux_2_28 wheels, no Docker)
+	cd $(CFN) && sam build -t 40-api.yaml
+
+deploy-api: sam-build  ## 40: build and deploy the vocabulary API
+	cd $(CFN) && sam deploy --config-env $(ENV)
+
+clean:  ## Remove build artefacts
+	rm -rf $(CFN)/.aws-sam apps/api/vendor apps/api/requirements.txt .pytest_cache
 
 check: lint typecheck test check-vocab check-corpus cfn-lint  ## Everything CI runs. Fully offline.
 

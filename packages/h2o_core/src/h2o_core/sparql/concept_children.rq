@@ -1,0 +1,28 @@
+# One level of sub-terms, with enough to render each without a second query.
+#
+# expand_concept walks this iteratively with a visited set rather than using a
+# skos:broader+ path, for two reasons. A property path cannot report how far it
+# travelled, and the tool takes a depth. And iteration with a visited set
+# terminates even if a cycle reaches the graph despite integrity check 3, where
+# a transitive path would not.
+
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+SELECT ?child ?pref_label ?definition (COUNT(DISTINCT ?grandchild) AS ?child_count)
+WHERE {
+  GRAPH <h2o:graph/published> {
+    ?child skos:broader {{concept}} ;
+           skos:prefLabel ?pref_label .
+    FILTER (LANG(?pref_label) = "en")
+    # Shown inline in the parent picker: choosing a parent is the
+    # highest-consequence edit on the review card and the easiest to get wrong
+    # from a label alone (ADR-006).
+    OPTIONAL {
+      ?child skos:definition ?definition .
+      FILTER (LANG(?definition) = "en")
+    }
+    OPTIONAL { ?grandchild skos:broader ?child }
+  }
+}
+GROUP BY ?child ?pref_label ?definition
+ORDER BY ?pref_label

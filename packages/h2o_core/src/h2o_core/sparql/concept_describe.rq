@@ -1,0 +1,14 @@
+# Every triple about one concept, as a graph.
+#
+# Three callers, all of which need triples rather than rows: the publish
+# transaction's history snapshot, the before/after diff shown on publish, and
+# the Turtle behind the console's "Show technical detail" toggle (ADR-006).
+
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+CONSTRUCT { {{concept}} ?predicate ?value }
+WHERE {
+  GRAPH <h2o:graph/published> {
+    {{concept}} ?predicate ?value .
+  }
+}
