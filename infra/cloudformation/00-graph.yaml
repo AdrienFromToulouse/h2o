@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  h2o graph dataset (ADR-007) — the versioned S3 object holding the whole RDF
+  dataset as N-Quads, plus the advisory lock that serialises publishes.
+
+  All four named graphs (published, draft, history/*, facts — ADR-005) live
+  inside the one object, which is why the serialisation is N-Quads and not
+  Turtle: named graphs are preserved natively rather than emulated.
+
+  Versioning is on. Every publish lands as a new object version, giving the
+  dataset point-in-time history independently of the in-graph history/ graphs.
+
+  Deploy:
+    aws cloudformation deploy \
+      --template-file infra/cloudformation/00-graph.yaml \
+      --stack-name h2o-prod-graph \
+      --parameter-overrides Environment=prod \
+      --region eu-west-1 --profile personal
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Environment suffix used by every h2o resource name.
+
+Resources:
+  GraphBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub h2o-${Environment}-graph
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          # Deliberately long. An object version here is a governed publish, and
+          # a 90-day expiry would silently cap the rollback window the ADR-005
+          # history graphs assume is available.
+          - Id: expire-noncurrent-versions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 730
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+  PublishLockTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      # Advisory only. The S3 conditional PUT is what makes a concurrent publish
+      # safe; this lock only makes one rare. A publish is gate -> history copy ->
+      # update -> conditional PUT, and without a lock two curators both run a
+      # full SHACL validation before one of them loses on the ETag. The TTL means
+      # a crashed holder self-heals rather than blocking the vocabulary.
+      TableName: !Sub h2o-${Environment}-publish-lock
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: lock_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: lock_id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  GraphBucketName:
+    Description: Bucket holding the N-Quads dataset — set as H2O_GRAPH_BUCKET.
+    Value: !Ref GraphBucket
+    Export:
+      Name: !Sub ${Environment}-H2OGraphBucketName
+  GraphBucketArn:
+    Description: Graph bucket ARN, imported by the API and agent execution roles.
+    Value: !GetAtt GraphBucket.Arn
+    Export:
+      Name: !Sub ${Environment}-H2OGraphBucketArn
+  PublishLockTableName:
+    Description: Advisory publish lock table name.
+    Value: !Ref PublishLockTable
+    Export:
+      Name: !Sub ${Environment}-H2OPublishLockTableName
+  PublishLockTableArn:
+    Description: Advisory publish lock table ARN.
+    Value: !GetAtt PublishLockTable.Arn
+    Export:
+      Name: !Sub ${Environment}-H2OPublishLockTableArn

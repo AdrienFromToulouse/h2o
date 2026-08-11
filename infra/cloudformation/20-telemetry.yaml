@@ -1,0 +1,129 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  h2o fleet telemetry (ADR-003) — where OTLP lands, and the store the agent
+  reads fleet signals from.
+
+  There is no collector here, and that is deliberate. ADR-003 puts live OTLP
+  ingest out of scope: a recorded fixture in data/telemetry/ replays through the
+  same mapping code, so the OTEL-to-SKOS mapping is exercised without a device.
+  A real deployment terminates OTLP in a collector whose exporter writes to this
+  bucket, and nothing downstream of the bucket changes when it does.
+
+  The rule that would trigger a replay on object-created lives in 40-api.yaml,
+  because a rule cannot reference a function in a stack that has not been
+  deployed yet, and importing it here would create the dependency cycle the
+  fixed-name convention exists to avoid.
+
+  Deploy:
+    aws cloudformation deploy \
+      --template-file infra/cloudformation/20-telemetry.yaml \
+      --stack-name h2o-prod-telemetry \
+      --parameter-overrides Environment=prod \
+      --region eu-west-1 --profile personal
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Environment suffix used by every h2o resource name.
+
+Resources:
+  TelemetryBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub h2o-${Environment}-telemetry
+      # Versioning off, unlike the graph and raw-docs buckets. Those hold
+      # artefacts whose history matters; this holds a stream. A superseded
+      # OTLP batch is not a prior version of anything.
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-raw-otlp
+            Status: Enabled
+            ExpirationInDays: 30
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+  FleetSignalsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      # Keyed by the resolved business concept, not by the OTEL attribute, so
+      # get_fleet_signal(concept) is one Query. The wire token is what the
+      # mapping translates away; storing by it would put firmware naming back
+      # into the read path (ADR-003 §4).
+      TableName: !Sub h2o-${Environment}-fleet-signals
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: concept_id
+          AttributeType: S
+        - AttributeName: observed_at_device
+          AttributeType: S
+        - AttributeName: device_id
+          AttributeType: S
+        - AttributeName: observed_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: concept_id
+          KeyType: HASH
+        - AttributeName: observed_at_device
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        # get_fleet_signal(concept, device) narrows to one dispenser.
+        - IndexName: by-device
+          KeySchema:
+            - AttributeName: device_id
+              KeyType: HASH
+            - AttributeName: observed_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        # Fleet readings age out; the current state of a machine is what gets
+        # asked about. This is exactly the property the gap table must NOT have:
+        # "traces are sampled and expire; a curation backlog must do neither"
+        # (ADR-003 §6). The two tables sit one file apart for that contrast.
+        AttributeName: expires_at
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  TelemetryBucketName:
+    Description: Where the recorded OTLP fixture is seeded, and where a real collector would write.
+    Value: !Ref TelemetryBucket
+    Export:
+      Name: !Sub ${Environment}-H2OTelemetryBucketName
+  TelemetryBucketArn:
+    Value: !GetAtt TelemetryBucket.Arn
+    Export:
+      Name: !Sub ${Environment}-H2OTelemetryBucketArn
+  FleetSignalsTableName:
+    Description: Concept-keyed fleet readings — the store get_fleet_signal reads.
+    Value: !Ref FleetSignalsTable
+    Export:
+      Name: !Sub ${Environment}-H2OFleetSignalsTableName
+  FleetSignalsTableArn:
+    Value: !GetAtt FleetSignalsTable.Arn
+    Export:
+      Name: !Sub ${Environment}-H2OFleetSignalsTableArn

@@ -1,0 +1,339 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  h2o retrieval and operational data (ADR-002, ADR-004, ADR-005) — the S3
+  Vectors indexes, the raw document bucket, and the four DynamoDB tables that
+  hold everything the RDF graph deliberately does not.
+
+  Claims are NOT here. Extracted facts, their conflict flags and their held
+  status live in h2o:graph/facts (ADR-005), so this stack holds only the
+  operational churn: the curation backlog, the audit trail, the document
+  registry, and run records.
+
+  Deploy:
+    aws cloudformation deploy \
+      --template-file infra/cloudformation/10-data.yaml \
+      --stack-name h2o-prod-data \
+      --parameter-overrides Environment=prod \
+      --region eu-west-1 --profile personal
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Environment suffix used by every h2o resource name.
+
+Resources:
+  # ------------------------------------------------------------- retrieval
+
+  VectorBucket:
+    Type: AWS::S3Vectors::VectorBucket
+    Properties:
+      VectorBucketName: !Sub h2o-${Environment}-vectors
+      EncryptionConfiguration:
+        SseType: AES256
+
+  DocumentIndex:
+    Type: AWS::S3Vectors::Index
+    Properties:
+      IndexName: !Sub h2o-${Environment}-documents
+      # !Ref on a vector bucket returns its ARN, not its name, so it pairs with
+      # VectorBucketArn. Passing it to VectorBucketName fails validation at
+      # create time on the 63-character name limit rather than at lint time.
+      VectorBucketArn: !Ref VectorBucket
+      DataType: float32
+      Dimension: 1024
+      DistanceMetric: cosine
+      MetadataConfiguration:
+        # Filterable metadata is capped per vector, and these two are payload we
+        # retrieve but never filter on: the snippet is what gets quoted, and the
+        # line range is what makes the quote locatable. The filterable keys are
+        # source_file, doc_type, doc_version and concept (ADR-002 step 2).
+        NonFilterableMetadataKeys:
+          - snippet
+          - line_range
+
+  LabelIndex:
+    Type: AWS::S3Vectors::Index
+    Properties:
+      # Concept-label embeddings. Separate from the document index because its
+      # lifecycle is the publish fan-out rather than ingestion: it is rebuilt
+      # when the vocabulary changes, and it backs both the resolution cascade's
+      # embedding stage (ADR-002 step 4) and the gap queue's attachment
+      # shortlist (ADR-004 §2).
+      IndexName: !Sub h2o-${Environment}-labels
+      VectorBucketArn: !Ref VectorBucket
+      DataType: float32
+      Dimension: 1024
+      DistanceMetric: cosine
+
+  RawDocsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub h2o-${Environment}-raw-docs
+      # A changed source document invalidates every claim extracted from it, so
+      # the version a claim cites has to remain retrievable.
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-noncurrent-versions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 90
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ---------------------------------------------------- operational tables
+
+  VocabularyGapsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      # Keyed by normalised surface form and nothing else, so ingestion, chat
+      # and telemetry merge into ONE entry with three counts rather than three
+      # entries (ADR-004 §1). A sort key would defeat that.
+      TableName: !Sub h2o-${Environment}-vocabulary-gaps
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: gap_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: total_occurrences
+          AttributeType: N
+      KeySchema:
+        - AttributeName: gap_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        # ADR-004: ordering is by raw occurrence count, explicitly not a learned
+        # ranking, because the queue's order has to be explainable.
+        - IndexName: status-occurrences-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: total_occurrences
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      # No TTL, deliberately. ADR-003: traces are sampled and expire; a curation
+      # backlog must do neither.
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+  CurationAuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub h2o-${Environment}-curation-audit
+      BillingMode: PAY_PER_REQUEST
+      # The only table here that is not disposable. Every other row in this
+      # stack is rebuilt by re-running ingestion; the audit trail is the record
+      # of who changed the governed vocabulary and why, and it cannot be
+      # regenerated from anything.
+      DeletionProtectionEnabled: true
+      AttributeDefinitions:
+        - AttributeName: concept_id
+          AttributeType: S
+        - AttributeName: published_at
+          AttributeType: S
+        - AttributeName: run_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: concept_id
+          KeyType: HASH
+        - AttributeName: published_at
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: by-run
+          KeySchema:
+            - AttributeName: run_id
+              KeyType: HASH
+            - AttributeName: published_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+  DocumentRegistryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      # ADR-002 step 1: a document is registered and then ingested, never
+      # guessed at and never silently skipped.
+      TableName: !Sub h2o-${Environment}-document-registry
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: filename
+          AttributeType: S
+        - AttributeName: doc_version
+          AttributeType: S
+        - AttributeName: concept_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: filename
+          KeyType: HASH
+        - AttributeName: doc_version
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        # "Which documents mention this term" is asked by the impact preview
+        # (ADR-005 §4) and again by the targeted re-index (ADR-005 §5.3).
+        # Without this index both become table scans.
+        - IndexName: by-concept
+          KeySchema:
+            - AttributeName: concept_id
+              KeyType: HASH
+            - AttributeName: filename
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+  RunsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      # One table for ingest, publish and telemetry runs. ADR-005 §5 says the
+      # console reuses the ingest-run polling hook rather than inventing a
+      # second one, so all three kinds share one envelope and one endpoint.
+      TableName: !Sub h2o-${Environment}-runs
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: run_id
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: kind
+          AttributeType: S
+        - AttributeName: started_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: run_id
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        # Backs GET /runs?kind= and GET /runs/latest?kind=, which is how the
+        # console resumes an in-flight run after a reload.
+        - IndexName: by-kind
+          KeySchema:
+            - AttributeName: kind
+              KeyType: HASH
+            - AttributeName: started_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  # !Ref returns the ARN for every S3 Vectors resource, so the plain names the
+  # application configures itself with are built with !Sub instead.
+  VectorBucketName:
+    Description: S3 Vectors bucket holding both indexes — set as H2O_VECTOR_BUCKET.
+    Value: !Sub h2o-${Environment}-vectors
+    Export:
+      Name: !Sub ${Environment}-H2OVectorBucketName
+  VectorBucketArn:
+    Value: !Ref VectorBucket
+    Export:
+      Name: !Sub ${Environment}-H2OVectorBucketArn
+  DocumentIndexName:
+    Description: Document chunk index — set as H2O_DOCUMENT_INDEX.
+    Value: !Sub h2o-${Environment}-documents
+    Export:
+      Name: !Sub ${Environment}-H2ODocumentIndexName
+  LabelIndexName:
+    Description: Concept-label index — set as H2O_LABEL_INDEX.
+    Value: !Sub h2o-${Environment}-labels
+    Export:
+      Name: !Sub ${Environment}-H2OLabelIndexName
+  RawDocsBucketName:
+    Description: Source document bucket.
+    Value: !Ref RawDocsBucket
+    Export:
+      Name: !Sub ${Environment}-H2ORawDocsBucketName
+  RawDocsBucketArn:
+    Description: Source document bucket ARN.
+    Value: !GetAtt RawDocsBucket.Arn
+    Export:
+      Name: !Sub ${Environment}-H2ORawDocsBucketArn
+  VocabularyGapsTableName:
+    Description: The curation backlog (ADR-004).
+    Value: !Ref VocabularyGapsTable
+    Export:
+      Name: !Sub ${Environment}-H2OVocabularyGapsTableName
+  VocabularyGapsTableArn:
+    Value: !GetAtt VocabularyGapsTable.Arn
+    Export:
+      Name: !Sub ${Environment}-H2OVocabularyGapsTableArn
+  CurationAuditTableName:
+    Description: Who changed which concept, when, and why (ADR-005).
+    Value: !Ref CurationAuditTable
+    Export:
+      Name: !Sub ${Environment}-H2OCurationAuditTableName
+  CurationAuditTableArn:
+    Value: !GetAtt CurationAuditTable.Arn
+    Export:
+      Name: !Sub ${Environment}-H2OCurationAuditTableArn
+  DocumentRegistryTableName:
+    Description: Registered documents and their versions (ADR-002 step 1).
+    Value: !Ref DocumentRegistryTable
+    Export:
+      Name: !Sub ${Environment}-H2ODocumentRegistryTableName
+  DocumentRegistryTableArn:
+    Value: !GetAtt DocumentRegistryTable.Arn
+    Export:
+      Name: !Sub ${Environment}-H2ODocumentRegistryTableArn
+  RunsTableName:
+    Description: Ingest, publish and telemetry runs, one envelope.
+    Value: !Ref RunsTable
+    Export:
+      Name: !Sub ${Environment}-H2ORunsTableName
+  RunsTableArn:
+    Value: !GetAtt RunsTable.Arn
+    Export:
+      Name: !Sub ${Environment}-H2ORunsTableArn

@@ -1,0 +1,82 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Identity for the h2o frontend's server routes (ADR-001, ADR-006).
+
+  The Next.js route handlers are the only component holding AWS credentials:
+  they SigV4-sign calls to the AgentCore runtime and the vocabulary API, and the
+  browser never reaches either. An IAM user is used because Vercel has no OIDC
+  trust path into a personal account; the access key is created by hand and
+  never appears in this template or its outputs.
+
+  Deploy after 40-api and 50-agent, passing the REST API id:
+    aws cloudformation deploy \
+      --template-file infra/cloudformation/60-frontend.yaml \
+      --stack-name h2o-prod-frontend \
+      --parameter-overrides Environment=prod ApiId=<rest-api-id> \
+      --capabilities CAPABILITY_NAMED_IAM \
+      --region eu-west-1 --profile personal
+
+  Then mint the key, and store it only in the frontend's environment:
+    aws iam create-access-key --user-name h2o-prod-frontend --profile personal
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Environment suffix used by every h2o resource name.
+  ApiId:
+    Type: String
+    Default: "*"
+    Description: >
+      REST API id from 40-api.yaml's ApiId output. Left as * only until that
+      stack exists; narrow it on the next deploy.
+
+Resources:
+  FrontendUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub h2o-${Environment}-frontend
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+  FrontendCallerPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: h2o-frontend-caller
+      Users:
+        - !Ref FrontendUser
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: InvokeChatAgent
+            Effect: Allow
+            Action: bedrock-agentcore:InvokeAgentRuntime
+            Resource:
+              - Fn::ImportValue: !Sub ${Environment}-H2OAgentRuntimeArn
+              # A qualifier resolves to the endpoint sub-resource, so the
+              # runtime ARN alone is not enough. Omitting this second entry
+              # produces a 403 that reads like a bad signature and sends you
+              # looking at SigV4 instead of at IAM.
+              - !Sub
+                - ${RuntimeArn}/runtime-endpoint/*
+                - RuntimeArn:
+                    Fn::ImportValue: !Sub ${Environment}-H2OAgentRuntimeArn
+          - Sid: InvokeVocabularyApi
+            Effect: Allow
+            Action: execute-api:Invoke
+            Resource: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*
+
+Outputs:
+  UserName:
+    Description: Create the access key for this user by hand; never store it here.
+    Value: !Ref FrontendUser
+    Export:
+      Name: !Sub ${Environment}-H2OFrontendUserName
+  UserArn:
+    Value: !GetAtt FrontendUser.Arn
+    Export:
+      Name: !Sub ${Environment}-H2OFrontendUserArn

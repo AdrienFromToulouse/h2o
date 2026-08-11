@@ -1,0 +1,262 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  h2o vocabulary API (ADR-001, ADR-007) — FastAPI on Lambda behind an
+  IAM-authorised API Gateway, with no VPC because there is no Neptune.
+
+  One function serves four event shapes: HTTP through Mangum, the asynchronous
+  self-invocation that runs ingestion, one publish fan-out step per Step
+  Functions Task, and the telemetry replay. The graph, vector, telemetry and
+  DynamoDB resources are owned by stacks 00-20; this stack references them by
+  name and never creates them.
+
+  A zip, not a container image: pyoxigraph publishes aarch64 manylinux_2_28
+  wheels and this runtime is Amazon Linux 2023. See apps/api/Makefile.
+
+  Deploy:
+    make api-reqs
+    cd infra/cloudformation && sam build -t 40-api.yaml && sam deploy --config-env prod
+
+Parameters:
+  Env:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Environment suffix used by every h2o resource name.
+  ModelId:
+    Type: String
+    Default: eu.amazon.nova-2-lite-v1:0
+    Description: >
+      Bedrock inference profile for extraction and the gap-shortlist ranking.
+      This is a profile and differs by deployment (ADR-001); verify the
+      available one at build time rather than trusting this default.
+  EmbedModelId:
+    Type: String
+    Default: amazon.titan-embed-text-v2:0
+    Description: Embedding model, used identically in every configuration.
+  AutoReplayTelemetry:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >
+      Trigger a telemetry replay when an object lands in the telemetry bucket.
+      Off by default so the demonstrator stays button-driven and a run happens
+      because somebody asked for one.
+
+Conditions:
+  EnableAutoReplay: !Equals [!Ref AutoReplayTelemetry, "true"]
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Architectures: [arm64]
+    # pyoxigraph, pySHACL and the loaded dataset all live in memory during a
+    # publish, and Lambda scales CPU with memory, which is what keeps the SHACL
+    # run inside API Gateway's 29s ceiling.
+    MemorySize: 2048
+    Tracing: Active
+
+Resources:
+  H2OApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub h2o-${Env}-api
+      StageName: !Ref Env
+      Auth:
+        # Only signed callers (the Next.js server routes) may reach the API.
+        DefaultAuthorizer: AWS_IAM
+        # SAM defaults InvokeRole to CALLER_CREDENTIALS, which sets the
+        # integration credentials to arn:aws:iam::*:user/* -- API Gateway then
+        # invokes the function *as the caller*, so every client needs
+        # lambda:InvokeFunction on top of execute-api:Invoke. A caller with only
+        # the latter gets a bare 500 and the function is never invoked, which is
+        # indistinguishable from a broken backend. NONE restores the normal
+        # path: API Gateway uses the resource permission SAM already creates.
+        InvokeRole: NONE
+      TracingEnabled: true
+      Tags:
+        Project: h2o
+        Environment: !Ref Env
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      # A fixed name lets the function grant itself invoke rights without a
+      # circular dependency between the role and the function, and lets
+      # 30-orchestration.yaml construct this ARN instead of importing it --
+      # which is what keeps the two stacks free of a dependency cycle.
+      FunctionName: !Sub h2o-${Env}-api
+      CodeUri: ../../apps/api
+      Handler: h2o_api.handler.lambda_handler
+      Description: h2o vocabulary API, ingest worker, and publish fan-out steps
+      # The HTTP path is bounded by API Gateway's 29s; this timeout is for the
+      # asynchronous ingest invocation and the fan-out's re-index step.
+      Timeout: 900
+      Environment:
+        Variables:
+          # Every h2o-{env}-* name derives from this one variable inside
+          # h2o_core.config. Listing eight here would be eight places to forget.
+          H2O_ENV: !Ref Env
+          H2O_GRAPH_BACKEND: oxigraph
+          MODEL_ID: !Ref ModelId
+          EMBED_MODEL_ID: !Ref EmbedModelId
+      Events:
+        Root:
+          Type: Api
+          Properties:
+            RestApiId: !Ref H2OApi
+            Path: /
+            Method: ANY
+        Proxy:
+          Type: Api
+          Properties:
+            RestApiId: !Ref H2OApi
+            Path: /{proxy+}
+            Method: ANY
+      Policies:
+        - Statement:
+            - Sid: GraphDatasetReadWrite
+              Effect: Allow
+              # No separate action is needed for the If-Match conditional PUT;
+              # it is a header on PutObject, and S3 enforces it server-side.
+              Action:
+                - s3:GetObject
+                - s3:GetObjectVersion
+                - s3:PutObject
+              Resource:
+                - !Sub
+                  - ${Bucket}/*
+                  - Bucket:
+                      Fn::ImportValue: !Sub ${Env}-H2OGraphBucketArn
+            - Sid: GraphDatasetList
+              Effect: Allow
+              Action: s3:ListBucket
+              Resource:
+                Fn::ImportValue: !Sub ${Env}-H2OGraphBucketArn
+            - Sid: CorpusAndTelemetryRead
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:ListBucket
+              Resource:
+                - Fn::ImportValue: !Sub ${Env}-H2ORawDocsBucketArn
+                - !Sub
+                  - ${Bucket}/*
+                  - Bucket:
+                      Fn::ImportValue: !Sub ${Env}-H2ORawDocsBucketArn
+                - Fn::ImportValue: !Sub ${Env}-H2OTelemetryBucketArn
+                - !Sub
+                  - ${Bucket}/*
+                  - Bucket:
+                      Fn::ImportValue: !Sub ${Env}-H2OTelemetryBucketArn
+            - Sid: VectorsReadWrite
+              Effect: Allow
+              Action:
+                - s3vectors:GetIndex
+                - s3vectors:ListIndexes
+                - s3vectors:PutVectors
+                - s3vectors:GetVectors
+                - s3vectors:QueryVectors
+                - s3vectors:DeleteVectors
+              Resource:
+                - !Sub arn:${AWS::Partition}:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/h2o-${Env}-vectors
+                - !Sub arn:${AWS::Partition}:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/h2o-${Env}-vectors/index/*
+            - Sid: OperationalTables
+              Effect: Allow
+              Action:
+                - dynamodb:Query
+                - dynamodb:GetItem
+                - dynamodb:BatchGetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:BatchWriteItem
+              Resource:
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Env}-vocabulary-gaps
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Env}-vocabulary-gaps/index/*
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Env}-curation-audit
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Env}-curation-audit/index/*
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Env}-document-registry
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Env}-document-registry/index/*
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Env}-runs
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Env}-runs/index/*
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Env}-fleet-signals
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Env}-fleet-signals/index/*
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Env}-publish-lock
+            - Sid: BedrockEmbeddingAndExtraction
+              Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource:
+                # The EU inference profile routes to models in several regions,
+                # so the foundation-model ARNs stay region-wildcarded.
+                - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0
+                - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0
+                - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${ModelId}
+            - Sid: EmitPublishEvent
+              Effect: Allow
+              # Deliberately NOT states:StartExecution. ADR-005 makes the event
+              # the trigger and the state machine a subscriber; granting both
+              # would make the dispatcher's AWS arm ambiguous and leave a second
+              # consumer nowhere to attach.
+              Action: events:PutEvents
+              Resource: !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/h2o-${Env}-bus
+            - Sid: SelfInvokeForAsyncIngest
+              Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:h2o-${Env}-api
+      Tags:
+        Project: h2o
+        Environment: !Ref Env
+
+  TelemetryLandedRule:
+    Type: AWS::Events::Rule
+    Condition: EnableAutoReplay
+    Properties:
+      Name: !Sub h2o-${Env}-telemetry-landed
+      Description: Replay OTLP through the ADR-003 mapper when a batch lands.
+      # The default bus: S3 delivers Object Created events there, not to ours.
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - !Sub h2o-${Env}-telemetry
+      State: ENABLED
+      Targets:
+        - Id: replay
+          Arn: !GetAtt ApiFunction.Arn
+          Input: '{"h2o_action": "telemetry_replay"}'
+
+  TelemetryLandedPermission:
+    Type: AWS::Lambda::Permission
+    Condition: EnableAutoReplay
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt TelemetryLandedRule.Arn
+
+Outputs:
+  ApiUrl:
+    Description: Base URL of the vocabulary API — set as H2O_API_URL on the frontend.
+    Value: !Sub https://${H2OApi}.execute-api.${AWS::Region}.amazonaws.com/${Env}
+    Export:
+      Name: !Sub ${Env}-H2OApiUrl
+  ApiId:
+    Description: REST API id — pass to 60-frontend.yaml so it can scope execute-api:Invoke.
+    Value: !Ref H2OApi
+    Export:
+      Name: !Sub ${Env}-H2OApiId
+  FunctionName:
+    Value: !Ref ApiFunction
+    Export:
+      Name: !Sub ${Env}-H2OApiFunctionName
+  FunctionArn:
+    Value: !GetAtt ApiFunction.Arn
+    Export:
+      Name: !Sub ${Env}-H2OApiFunctionArn

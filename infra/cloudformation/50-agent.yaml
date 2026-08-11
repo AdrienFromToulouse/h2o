@@ -1,0 +1,254 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  h2o chat agent (ADR-001) — the ECR repository holding the agent image, the
+  AgentCore Runtime that runs it, and a LIVE endpoint tracking the version this
+  deploy published.
+
+  The execution role is the enforcement point for ADR-001's central prohibition:
+  the chat agent has no write access to the graph, by IAM and not by prompt. It
+  carries s3:GetObject on the dataset and no s3:PutObject anywhere. Its one write
+  is dynamodb:UpdateItem on the gap table, which is a curation record rather than
+  a graph write, and which deterministic resolver code performs on a miss.
+
+  Raw CloudFormation rather than CDK: the resource types exist, and CDK's image
+  asset would hide the ECR repository this stack is meant to own. The image is
+  built and pushed by `make agent-push` before this deploys.
+
+  Deploy:
+    make deploy-agent   (builds, pushes, then deploys with ImageTag=<git sha>)
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Environment suffix used by every h2o resource name.
+  ModelId:
+    Type: String
+    Default: eu.amazon.nova-2-lite-v1:0
+    Description: Bedrock inference profile the agent converses with.
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: >
+      Image tag to run. AgentCore versions on the container URI, so `latest`
+      deploys once and then never produces a new runtime version. make
+      deploy-agent passes the git sha for that reason.
+
+Resources:
+  AgentRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub h2o-${Environment}-agent
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      # Immutable, because the runtime pins a tag: a mutable tag would let the
+      # code change under a deployed runtime with no CloudFormation diff.
+      ImageTagMutability: IMMUTABLE
+      EmptyOnDelete: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep the last 5 images; older ones are only reachable by a redeploy nobody wants.",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+  AgentExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub h2o-${Environment}-agentcore-execution
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              # Confused-deputy guard: only this account's AgentCore resources
+              # may assume the role.
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*
+      Policies:
+        - PolicyName: runtime-platform
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ECRImageAccess
+                Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !GetAtt AgentRepository.Arn
+              - Sid: ECRTokenAccess
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Sid: RuntimeLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                  - logs:DescribeLogGroups
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/*
+              - Sid: Tracing
+                Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: "*"
+              - Sid: Metrics
+                Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: bedrock-agentcore
+              - Sid: GetAgentAccessToken
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetWorkloadAccessToken
+                  - bedrock-agentcore:GetWorkloadAccessTokenForJWT
+                  - bedrock-agentcore:GetWorkloadAccessTokenForUserId
+                Resource:
+                  - !Sub arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default
+                  - !Sub arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default/workload-identity/h2o_agent_${Environment}-*
+              - Sid: BedrockInference
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0
+                  - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0
+                  - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${ModelId}
+        - PolicyName: read-only-knowledge
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: PublishedGraphRead
+                Effect: Allow
+                # ADR-001: "No graph writes from the chat agent, at all. Its IAM
+                # role carries no write access to the graph store: read-only on
+                # the S3 dataset prefix today." This statement is that sentence.
+                # There is no s3:PutObject on this role and there must never be
+                # one -- writes happen in ingestion and in publish, never inside
+                # a conversation.
+                Action: s3:GetObject
+                Resource: !Sub
+                  - ${Bucket}/*
+                  - Bucket:
+                      Fn::ImportValue: !Sub ${Environment}-H2OGraphBucketArn
+              - Sid: PublishedGraphList
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource:
+                  Fn::ImportValue: !Sub ${Environment}-H2OGraphBucketArn
+              - Sid: DocumentRetrievalRead
+                Effect: Allow
+                Action:
+                  - s3vectors:QueryVectors
+                  - s3vectors:GetVectors
+                  - s3vectors:GetIndex
+                  - s3vectors:ListIndexes
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/h2o-${Environment}-vectors
+                  - !Sub arn:${AWS::Partition}:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/h2o-${Environment}-vectors/index/*
+              - Sid: FleetAndRegistryRead
+                Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:GetItem
+                Resource:
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Environment}-fleet-signals
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Environment}-fleet-signals/index/*
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Environment}-document-registry
+              - Sid: RecordVocabularyGap
+                Effect: Allow
+                # The only write this role carries, and it is not a write to the
+                # graph. ADR-004: a resolve miss is recorded by deterministic
+                # resolver code in h2o_core, not by a tool the model can call,
+                # and there is deliberately no report_gap tool to misuse.
+                #
+                # UpdateItem only, no PutItem: the item shape, the evidence cap
+                # and the dismissal-suppression condition all stay in code the
+                # model cannot address, and a malformed write cannot replace a
+                # curator's dismissal with a fresh open entry.
+                Action: dynamodb:UpdateItem
+                Resource: !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/h2o-${Environment}-vocabulary-gaps
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+  AgentRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      # Underscores, not dashes. cfn-lint's schema accepts either, but the
+      # service rejected dashes in practice, so this follows what deployed.
+      AgentRuntimeName: !Sub h2o_agent_${Environment}
+      RoleArn: !GetAtt AgentExecutionRole.Arn
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Sub ${AgentRepository.RepositoryUri}:${ImageTag}
+      ProtocolConfiguration: HTTP
+      NetworkConfiguration:
+        # No VPC anywhere in h2o: there is no Neptune to reach (ADR-007 §2).
+        NetworkMode: PUBLIC
+      EnvironmentVariables:
+        AWS_REGION: !Ref AWS::Region
+        H2O_ENV: !Ref Environment
+        MODEL_ID: !Ref ModelId
+        # The AgentCore HTTP contract fixes the container port at 8080.
+        PORT: "8080"
+        PYTHONUNBUFFERED: "1"
+      Tags:
+        Project: h2o
+        Environment: !Ref Environment
+
+  AgentRuntimeEndpoint:
+    Type: AWS::BedrockAgentCore::RuntimeEndpoint
+    Properties:
+      Name: LIVE
+      AgentRuntimeId: !GetAtt AgentRuntime.AgentRuntimeId
+      # Tracking the version means each deploy repoints LIVE at the runtime
+      # version this stack just published, rather than leaving it on the first.
+      AgentRuntimeVersion: !GetAtt AgentRuntime.AgentRuntimeVersion
+
+Outputs:
+  AgentRuntimeArn:
+    Description: Set as AGENT_RUNTIME_ARN on the frontend.
+    Value: !GetAtt AgentRuntime.AgentRuntimeArn
+    Export:
+      Name: !Sub ${Environment}-H2OAgentRuntimeArn
+  AgentRuntimeId:
+    Value: !GetAtt AgentRuntime.AgentRuntimeId
+    Export:
+      Name: !Sub ${Environment}-H2OAgentRuntimeId
+  AgentRepositoryUri:
+    Description: Push the agent image here before deploying this stack.
+    Value: !GetAtt AgentRepository.RepositoryUri
+    Export:
+      Name: !Sub ${Environment}-H2OAgentRepositoryUri

@@ -10,7 +10,9 @@ REGION  ?= eu-west-1
 STACK    = h2o-$(ENV)
 CFN      = infra/cloudformation
 
-.PHONY: help install lock lint format typecheck test check check-vocab check-corpus cfn-lint
+.PHONY: help install lock lint format typecheck test check check-vocab check-corpus cfn-lint \
+        deploy-data-plane deploy-graph deploy-data deploy-telemetry deploy-orchestration \
+        deploy-frontend outputs
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -55,3 +57,46 @@ cfn-lint:  ## Validate every CloudFormation template
 	@test -d $(CFN) && uv run cfn-lint $(CFN)/*.yaml || echo "  (no templates yet)"
 
 check: lint typecheck test check-vocab check-corpus cfn-lint  ## Everything CI runs. Fully offline.
+
+# ----------------------------------------------------------------- deployment
+#
+# Stacks 00-30 hold no code and deploy on their own. 40-api and 50-agent deploy
+# once there is something to ship (a Lambda bundle and a container image), and
+# 60-frontend deploys last because it scopes its policy to the API's id.
+
+deploy-data-plane: deploy-graph deploy-data deploy-telemetry deploy-orchestration  ## Stacks 00-30
+
+deploy-graph:  ## 00: versioned N-Quads dataset bucket + advisory publish lock
+	aws cloudformation deploy --template-file $(CFN)/00-graph.yaml \
+		--stack-name $(STACK)-graph --parameter-overrides Environment=$(ENV) \
+		--region $(REGION) --no-fail-on-empty-changeset
+
+deploy-data:  ## 10: S3 Vectors bucket + both indexes, raw docs, four tables
+	aws cloudformation deploy --template-file $(CFN)/10-data.yaml \
+		--stack-name $(STACK)-data --parameter-overrides Environment=$(ENV) \
+		--region $(REGION) --no-fail-on-empty-changeset
+
+deploy-telemetry:  ## 20: telemetry bucket + concept-keyed fleet-signal store
+	aws cloudformation deploy --template-file $(CFN)/20-telemetry.yaml \
+		--stack-name $(STACK)-telemetry --parameter-overrides Environment=$(ENV) \
+		--region $(REGION) --no-fail-on-empty-changeset
+
+deploy-orchestration:  ## 30: EventBridge bus + publish fan-out state machine
+	aws cloudformation deploy --template-file $(CFN)/30-orchestration.yaml \
+		--stack-name $(STACK)-orchestration --parameter-overrides Environment=$(ENV) \
+		--capabilities CAPABILITY_NAMED_IAM --region $(REGION) --no-fail-on-empty-changeset
+
+deploy-frontend:  ## 60: scoped IAM user for the Vercel BFF (needs API_ID=...)
+	@test -n "$(API_ID)" || { echo "usage: make deploy-frontend API_ID=<rest-api-id>"; exit 1; }
+	aws cloudformation deploy --template-file $(CFN)/60-frontend.yaml \
+		--stack-name $(STACK)-frontend \
+		--parameter-overrides Environment=$(ENV) ApiId=$(API_ID) \
+		--capabilities CAPABILITY_NAMED_IAM --region $(REGION) --no-fail-on-empty-changeset
+
+# Stacks that have not been deployed yet are skipped rather than failing the
+# target: this is how you find out what exists, so "not there" is an answer.
+outputs:  ## Print every stack output, for filling .env.local
+	@for s in graph data telemetry orchestration api agent frontend; do \
+		aws cloudformation describe-stacks --stack-name $(STACK)-$$s --region $(REGION) \
+			--query "Stacks[0].Outputs[].[OutputKey,OutputValue]" --output text 2>/dev/null \
+			|| echo "  ($(STACK)-$$s not deployed)"; done

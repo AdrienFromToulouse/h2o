@@ -1,0 +1,313 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  h2o publish fan-out (ADR-005) — the EventBridge bus a publish emits onto, and
+  the Step Functions state machine that runs the consequences in order.
+
+  Publishing is the beginning of the work, not the end of it: the change becomes
+  real when the resolver index is rebuilt, held claims are re-resolved, and
+  affected documents are re-indexed. Step Functions rather than a Lambda chain
+  because this has retries, partial failure, ordering, and a status a human is
+  watching. See the comments in Resources for the rest.
+
+  Deploy:
+    aws cloudformation deploy \
+      --template-file infra/cloudformation/30-orchestration.yaml \
+      --stack-name h2o-prod-orchestration \
+      --parameter-overrides Environment=prod \
+      --capabilities CAPABILITY_NAMED_IAM \
+      --region eu-west-1 --profile personal
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Environment suffix used by every h2o resource name.
+
+Resources:
+  EventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub h2o-${Environment}-bus
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+  FanOutLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/vendedlogs/states/h2o-${Environment}-publish-fanout
+      RetentionInDays: 30
+
+  FanOutRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub h2o-${Environment}-publish-fanout
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              # Confused-deputy guard: only this account's state machines in
+              # this region may assume the role.
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:*
+      Policies:
+        - PolicyName: publish-fanout
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: InvokeApiFunction
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                # Constructed, not imported. See the Description.
+                Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:h2o-${Environment}-api
+              - Sid: VendedLogs
+                Effect: Allow
+                # Step Functions logging genuinely requires Resource "*": the
+                # log-delivery APIs are account-scoped and do not accept a log
+                # group ARN. Narrowing this produces a state machine that fails
+                # to create, so it is left wide on purpose.
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                Resource: "*"
+              - Sid: Tracing
+                Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: "*"
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+  PublishFanOut:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub h2o-${Environment}-publish-fanout
+      # STANDARD, not EXPRESS. An express workflow keeps no execution history,
+      # and the console polls this run while a curator watches it.
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt FanOutRole.Arn
+      LoggingConfiguration:
+        Level: ALL
+        IncludeExecutionData: true
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt FanOutLogGroup.Arn
+      TracingConfiguration:
+        Enabled: true
+      DefinitionString: !Sub |
+        {
+          "Comment": "ADR-005 section 5. Step 1's failure aborts the run: without the resolver index rebuild nothing else matters.",
+          "StartAt": "rebuild_index",
+          "States": {
+            "rebuild_index": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "h2o-${Environment}-api",
+                "Payload": {
+                  "h2o_action": "publish_step",
+                  "step": "rebuild_index",
+                  "run_id.$": "$.run_id",
+                  "event.$": "$.event"
+                }
+              },
+              "ResultSelector": { "result.$": "$.Payload" },
+              "ResultPath": "$.rebuild_index",
+              "Retry": [
+                {
+                  "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException", "Lambda.SdkClientException"],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                { "ErrorEquals": ["States.ALL"], "Next": "RecordFailure", "ResultPath": "$.error" }
+              ],
+              "Next": "reresolve_gaps"
+            },
+            "reresolve_gaps": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "h2o-${Environment}-api",
+                "Payload": {
+                  "h2o_action": "publish_step",
+                  "step": "reresolve_gaps",
+                  "run_id.$": "$.run_id",
+                  "event.$": "$.event"
+                }
+              },
+              "ResultSelector": { "result.$": "$.Payload" },
+              "ResultPath": "$.reresolve_gaps",
+              "Retry": [
+                {
+                  "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException", "Lambda.SdkClientException"],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                { "ErrorEquals": ["States.ALL"], "Next": "RecordFailure", "ResultPath": "$.error" }
+              ],
+              "Next": "reindex_documents"
+            },
+            "reindex_documents": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "h2o-${Environment}-api",
+                "Payload": {
+                  "h2o_action": "publish_step",
+                  "step": "reindex_documents",
+                  "run_id.$": "$.run_id",
+                  "event.$": "$.event"
+                }
+              },
+              "ResultSelector": { "result.$": "$.Payload" },
+              "ResultPath": "$.reindex_documents",
+              "Retry": [
+                {
+                  "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException", "Lambda.SdkClientException"],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                { "ErrorEquals": ["States.ALL"], "Next": "RecordFailure", "ResultPath": "$.error" }
+              ],
+              "Next": "record_run"
+            },
+            "record_run": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "h2o-${Environment}-api",
+                "Payload": {
+                  "h2o_action": "publish_step",
+                  "step": "record_run",
+                  "run_id.$": "$.run_id",
+                  "event.$": "$.event"
+                }
+              },
+              "ResultSelector": { "result.$": "$.Payload" },
+              "ResultPath": "$.record_run",
+              "Retry": [
+                {
+                  "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException", "Lambda.SdkClientException"],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "End": true
+            },
+            "RecordFailure": {
+              "Type": "Task",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "h2o-${Environment}-api",
+                "Payload": {
+                  "h2o_action": "publish_step",
+                  "step": "record_run",
+                  "run_id.$": "$.run_id",
+                  "event.$": "$.event",
+                  "failed.$": "$.error"
+                }
+              },
+              "End": true
+            }
+          }
+        }
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+  EventsInvokeStatesRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub h2o-${Environment}-events-invoke-states
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: start-publish-fanout
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !Ref PublishFanOut
+      Tags:
+        - Key: Project
+          Value: h2o
+        - Key: Environment
+          Value: !Ref Environment
+
+  PublishedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub h2o-${Environment}-vocabulary-published
+      Description: Start the publish fan-out when a concept is published (ADR-005 §5).
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source:
+          - h2o.vocabulary
+        detail-type:
+          - VocabularyPublished
+      State: ENABLED
+      Targets:
+        - Id: publish-fanout
+          Arn: !Ref PublishFanOut
+          RoleArn: !GetAtt EventsInvokeStatesRole.Arn
+          # The state machine receives the event detail as its input, so the
+          # execution's $.run_id and $.event are the publisher's own fields.
+          InputPath: $.detail
+
+Outputs:
+  EventBusName:
+    Description: Bus the API emits VocabularyPublished onto — set as H2O_EVENT_BUS.
+    Value: !Ref EventBus
+    Export:
+      Name: !Sub ${Environment}-H2OEventBusName
+  EventBusArn:
+    Value: !GetAtt EventBus.Arn
+    Export:
+      Name: !Sub ${Environment}-H2OEventBusArn
+  PublishFanOutArn:
+    Description: The publish fan-out state machine.
+    Value: !Ref PublishFanOut
+    Export:
+      Name: !Sub ${Environment}-H2OPublishFanOutArn
