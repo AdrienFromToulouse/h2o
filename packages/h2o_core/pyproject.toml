@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "h2o-core"
+version = "0.1.0"
+description = "Shared SKOS, graph, resolution, ingestion and governance logic for h2o"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "boto3>=1.40",
+  "pydantic>=2.9,<3",
+  # The graph runtime (ADR-007). A compiled Rust wheel; see the Lambda build in
+  # apps/api/Makefile for why the platform is pinned to manylinux_2_28.
+  "pyoxigraph>=0.5",
+  # The integrity gate (ADR-005). Both are pure-Python wheels.
+  "pyshacl>=0.30",
+  "rdflib>=7",
+]
+
+# Everything under src/h2o_core ships, which is why the SPARQL templates live
+# there rather than at the package root: they are data read through
+# importlib.resources, and a wheel without them starts fine and then fails on
+# the first query (ADR-001).
+[tool.hatch.build.targets.wheel]
+packages = ["src/h2o_core"]

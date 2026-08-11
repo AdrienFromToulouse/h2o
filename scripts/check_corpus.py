@@ -14,21 +14,25 @@ assertions rather than prose:
 5. The corpus actually exercises the vocabulary: how many concepts it mentions,
    and by which label.
 
-    uv run --with pyshacl scripts/check_corpus.py
+`normalise` and `flatten_html` are imported from h2o_core. Check 3 asks whether
+"gas bottle" resolves to nothing, and check 4 asks whether a citation quotes the
+readable price rather than the entity; both are only meaningful if they run the
+functions ingestion and the resolver actually use.
+
+    uv run python scripts/check_corpus.py
 
 Exit code 0 if every check passes, 1 otherwise.
 """
 
 from __future__ import annotations
 
-import html
 import json
 import re
 import sys
-import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
+from h2o_core.normalize import flatten_html, normalise
 from rdflib import Graph, Namespace, URIRef
 from rdflib.namespace import RDF, SKOS
 
@@ -49,26 +53,6 @@ notes: list[str] = []
 
 def fail(check: str, detail: str) -> None:
     failures.append(f"{check}: {detail}")
-
-
-def normalise(label: str) -> str:
-    """The resolver's normalisation. Must stay identical to check_vocab.py."""
-    text = unicodedata.normalize("NFKD", label)
-    text = "".join(c for c in text if not unicodedata.combining(c))
-    text = text.casefold()
-    text = re.sub(r"[^a-z0-9]+", " ", text)
-    return text.strip()
-
-
-def flatten_html(markup: str) -> str:
-    """Lossless de-markup: drop tags, decode entities, keep every character.
-
-    This is the transform ADR-002 requires for HTML citation. It is safe
-    precisely because it introduces no character the document did not contain.
-    """
-    without_comments = re.sub(r"<!--.*?-->", "", markup, flags=re.DOTALL)
-    without_tags = re.sub(r"<[^>]+>", "", without_comments)
-    return html.unescape(without_tags)
 
 
 def readable(path: Path) -> str:
@@ -139,7 +123,9 @@ total = sum(hits.values())
 if total != EXPECTED_GAP_MENTIONS:
     fail("seeded-gap", f"'{surface}' appears {total} times, expected {EXPECTED_GAP_MENTIONS}")
 if len(hits) != EXPECTED_GAP_DOCUMENTS:
-    fail("seeded-gap", f"'{surface}' spans {len(hits)} documents, expected {EXPECTED_GAP_DOCUMENTS}")
+    fail(
+        "seeded-gap", f"'{surface}' spans {len(hits)} documents, expected {EXPECTED_GAP_DOCUMENTS}"
+    )
 if total == EXPECTED_GAP_MENTIONS and len(hits) == EXPECTED_GAP_DOCUMENTS:
     spread = ", ".join(f"{n} in {name.split('-', 1)[0]}" for name, n in sorted(hits.items()))
     notes.append(f"OK  seeded gap: '{surface}' x{total} across {len(hits)} documents ({spread})")
@@ -201,7 +187,10 @@ for c in business:
 
 coverage = len(mentioned) * 100 // len(business) if business else 0
 if len(mentioned) < 20:
-    fail("coverage", f"only {len(mentioned)} concepts mentioned; the corpus barely exercises the vocabulary")
+    fail(
+        "coverage",
+        f"only {len(mentioned)} concepts mentioned; the corpus barely exercises the vocabulary",
+    )
 else:
     notes.append(
         f"OK  corpus mentions {len(mentioned)} of {len(business)} business concepts ({coverage}%)"

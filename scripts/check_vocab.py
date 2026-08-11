@@ -10,7 +10,11 @@ Three layers, in order of what owns what:
 3. Demonstrator invariants: the two deliberate gaps, and the ADR-003 mapping
    table executed against the recorded OTLP fixture.
 
-    uv run --with pyshacl scripts/check_vocab.py
+`normalise` is imported from h2o_core rather than defined here, because the
+whole point of check 2 is that it runs the function the published index is
+actually built with. A local copy would make this a check of a copy.
+
+    uv run python scripts/check_vocab.py
 
 Exit code 0 if every check passes, 1 otherwise.
 """
@@ -18,12 +22,11 @@ Exit code 0 if every check passes, 1 otherwise.
 from __future__ import annotations
 
 import json
-import re
 import sys
-import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
+from h2o_core.normalize import normalise
 from pyshacl import validate
 from rdflib import Graph, Namespace, URIRef
 from rdflib.namespace import RDF, SKOS
@@ -42,22 +45,6 @@ notes: list[str] = []
 
 def fail(check: str, detail: str) -> None:
     failures.append(f"{check}: {detail}")
-
-
-def normalise(label: str) -> str:
-    """The resolver's normalisation: fold case, strip accents and punctuation.
-
-    This is the function the published resolver index is built with, so it is
-    the only correct definition of "two labels collide". SPARQL cannot express
-    it, which is why the SHACL collision shape is a complement, not a
-    replacement: LCASE alone reads "CO₂ Cylinder" and "CO2 Cylinder" as
-    distinct, and the resolver does not.
-    """
-    text = unicodedata.normalize("NFKD", label)
-    text = "".join(c for c in text if not unicodedata.combining(c))
-    text = text.casefold()
-    text = re.sub(r"[^a-z0-9]+", " ", text)
-    return text.strip()
 
 
 def short(iri: URIRef | str) -> str:
@@ -185,7 +172,9 @@ hits = sorted(
     if any(w in str(lit).casefold() for w in SCALE_WORDS)
 )
 if hits:
-    fail("seeded-gap", f"limescale-related label(s) present: {hits}; ADR-003's fleet loop needs none")
+    fail(
+        "seeded-gap", f"limescale-related label(s) present: {hits}; ADR-003's fleet loop needs none"
+    )
 else:
     notes.append("OK  seeded gap intact: no limescale concept")
 
@@ -240,7 +229,10 @@ else:
     if unexpected:
         fail("otel-mapping", f"fixture tokens map to nothing: {sorted(unexpected)}")
     if missing_gap:
-        fail("otel-mapping", f"expected these to be UNMAPPED but they resolved: {sorted(missing_gap)}")
+        fail(
+            "otel-mapping",
+            f"expected these to be UNMAPPED but they resolved: {sorted(missing_gap)}",
+        )
     if not unexpected and not missing_gap:
         notes.append(
             f"OK  {len(tokens) - len(unmapped)}/{len(tokens)} fixture tokens map; "
@@ -254,7 +246,10 @@ card = H2O["carbon-filter"]
 expected_alts = {"Carbon Cartridge", "Filter Cartridge"}
 actual_alts = {str(x) for x in data.objects(card, SKOS.altLabel)}
 if not expected_alts <= actual_alts:
-    fail("review-card", f"carbon-filter altLabels {sorted(actual_alts)} miss {sorted(expected_alts - actual_alts)}")
+    fail(
+        "review-card",
+        f"carbon-filter altLabels {sorted(actual_alts)} miss {sorted(expected_alts - actual_alts)}",
+    )
 if (card, SKOS.broader, H2O["filter"]) not in data:
     fail("review-card", "carbon-filter is not skos:broader h2o:filter")
 if (card, SKOS.related, H2O["purification"]) not in data:

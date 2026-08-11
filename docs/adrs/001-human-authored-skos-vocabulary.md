@@ -70,8 +70,15 @@ An IRI is not a label. Renaming a concept changes its `prefLabel`, never its IRI
 agent = Agent(
     model=BedrockModel(model_id=MODEL_ID),
     system_prompt=GROUNDING_RULES,
-    tools=[resolve_concept, get_concept, browse_scheme, expand_concept,
-           get_facts, search_documents, get_fleet_signal],
+    tools=[
+        resolve_concept,
+        get_concept,
+        browse_scheme,
+        expand_concept,
+        get_facts,
+        search_documents,
+        get_fleet_signal,
+    ],
 )
 ```
 

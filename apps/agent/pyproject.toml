@@ -1,0 +1,18 @@
+[project]
+name = "agent"
+version = "0.1.0"
+description = "h2o chat agent — Strands on Bedrock AgentCore Runtime (ADR-001)"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "h2o-core",
+  "strands-agents>=1.48,<2",
+  "bedrock-agentcore>=1.0.3",
+  "aws-opentelemetry-distro>=0.10",
+]
+
+[tool.uv]
+# Never built as a wheel: the container COPYs this source in directly.
+package = false
+
+[tool.uv.sources]
+h2o-core = { workspace = true }

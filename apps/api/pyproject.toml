@@ -1,0 +1,18 @@
+[project]
+name = "api"
+version = "0.1.0"
+description = "h2o vocabulary API — FastAPI on Lambda behind API Gateway (ADR-001, ADR-007)"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "h2o-core",
+  "fastapi>=0.115",
+  "mangum>=0.19",
+]
+
+[tool.uv]
+# Never built as a wheel: the Lambda bundle is assembled by apps/api/Makefile,
+# which copies this source in and installs h2o_core from a vendored wheel.
+package = false
+
+[tool.uv.sources]
+h2o-core = { workspace = true }
