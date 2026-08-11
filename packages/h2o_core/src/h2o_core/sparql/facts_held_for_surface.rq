@@ -1,0 +1,25 @@
+# Held claims whose surface form matches, for the impact preview and for
+# re-resolution after a publish.
+#
+# This is what makes "adding this alternative term will resolve 12 mentions
+# across 3 documents" a count rather than an estimate, and what lets the fan-out
+# attach those claims without re-reading a single document (ADR-005).
+
+PREFIX h2o: <https://vocab.h2o.example/id/>
+
+SELECT ?claim ?subject_surface ?predicate ?value ?unit ?source_file ?doc_version ?line_range ?snippet
+WHERE {
+  GRAPH <h2o:graph/facts> {
+    ?claim h2o:status         h2o:held ;
+           h2o:heldSurface    {{surface}} ;
+           h2o:subjectSurface ?subject_surface ;
+           h2o:predicate      ?predicate ;
+           h2o:value          ?value ;
+           h2o:sourceFile     ?source_file ;
+           h2o:docVersion     ?doc_version ;
+           h2o:lineRange      ?line_range ;
+           h2o:snippet        ?snippet .
+    OPTIONAL { ?claim h2o:unit ?unit }
+  }
+}
+ORDER BY ?source_file ?line_range

@@ -113,6 +113,28 @@ def rows(store: pyoxigraph.Store, query: str) -> list[Any]:
     return list(result)
 
 
+def records(store: pyoxigraph.Store, query: str) -> list[dict[str, Any]]:
+    """Run a SELECT and return plain dicts of lexical values.
+
+    A QuerySolution is indexed by variable *name* but iterates over its
+    *values*, so ``{k: row[k] for k in row}`` reads naturally and raises. This
+    reads the variable list off the result set once and hands back dicts a
+    caller can treat as data.
+    """
+    result = store.query(query)
+    if not isinstance(result, pyoxigraph.QuerySolutions):
+        raise TypeError("expected a SELECT query")
+
+    names = [str(v)[1:] for v in result.variables]
+    return [
+        {
+            name: (getattr(row[name], "value", None) if row[name] is not None else None)
+            for name in names
+        }
+        for row in result
+    ]
+
+
 def digest(payload: bytes) -> str:
     """Content hash of a dataset, used as the resolver index's watermark.
 

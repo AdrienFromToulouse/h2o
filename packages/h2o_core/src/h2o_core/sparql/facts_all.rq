@@ -1,0 +1,26 @@
+# Every claim in the graph, held and active alike.
+#
+# Backs the ingest run's own summary and the /conflicts queue. Held claims are
+# included deliberately: they are the count that makes vocabulary work look
+# worth doing, and hiding them here would make the backlog invisible.
+
+PREFIX h2o: <https://vocab.h2o.example/id/>
+
+SELECT ?claim ?subject ?subject_surface ?predicate ?value ?unit ?source_file
+       ?doc_version ?line_range ?snippet ?status ?conflicts_with
+WHERE {
+  GRAPH <h2o:graph/facts> {
+    ?claim h2o:predicate      ?predicate ;
+           h2o:value          ?value ;
+           h2o:subjectSurface ?subject_surface ;
+           h2o:sourceFile     ?source_file ;
+           h2o:docVersion     ?doc_version ;
+           h2o:lineRange      ?line_range ;
+           h2o:snippet        ?snippet ;
+           h2o:status         ?status .
+    OPTIONAL { ?claim h2o:subject       ?subject }
+    OPTIONAL { ?claim h2o:unit          ?unit }
+    OPTIONAL { ?claim h2o:conflictsWith ?conflicts_with }
+  }
+}
+ORDER BY ?source_file ?line_range ?predicate
