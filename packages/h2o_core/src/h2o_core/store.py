@@ -45,6 +45,7 @@ __all__ = [
     "latest_run",
     "list_runs",
     "read_run",
+    "read_steps",
     "registry_table",
     "runs_table",
     "to_dynamo",
@@ -138,6 +139,21 @@ def write_step(
     target.put_item(
         Item=to_dynamo({**step, "run_id": run_id, "sk": f"STEP#{index:02d}#{step['name']}"})
     )
+
+
+def read_steps(run_id: str, *, table_resource: Any = None) -> list[dict[str, Any]]:
+    """The step rows of a run, whether or not its envelope exists yet.
+
+    `read_run` returns None without an envelope, which is right for a reader --
+    a run with no envelope is not a run. But the step that *writes* the envelope
+    needs to total up the steps before it, and at that moment there is no
+    envelope by definition. Asking for the steps directly is the difference
+    between a summary and an empty one.
+    """
+    target = table_resource or runs_table()
+    items = target.query(KeyConditionExpression=Key("run_id").eq(run_id)).get("Items", [])
+    steps = [from_dynamo(item) for item in items if item.get("sk") != RUN_SK]
+    return sorted(steps, key=lambda s: str(s.get("sk", "")))
 
 
 def read_run(run_id: str, *, table_resource: Any = None) -> dict[str, Any] | None:

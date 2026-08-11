@@ -28,6 +28,8 @@ def test_every_shipped_template_parses(store: pyoxigraph.Store) -> None:
         "old_parent": Iri("https://vocab.h2o.example/id/filter"),
         "new_parent": Iri("https://vocab.h2o.example/id/component"),
         "notation": Lit("carbon_filter"),
+        "history": Iri("h2o:graph/history/carbon-filter/1"),
+        "replacement": Iri("https://vocab.h2o.example/id/co2-cylinder"),
     }
 
     names = sparql.template_names()
@@ -41,6 +43,12 @@ def test_every_shipped_template_parses(store: pyoxigraph.Store) -> None:
         assert "{{" not in query, f"{name}: unsubstituted placeholder"
         if name.endswith(".rq"):
             store.query(query)
+        else:
+            # An update has to parse too, and the only way to find out is to run
+            # it. Against a throwaway store, so a template that really does
+            # delete something cannot corrupt the fixture the rest of the file
+            # reads -- an update that parses is all this test claims.
+            pyoxigraph.Store().update(query)
 
 
 def test_a_plain_string_is_refused() -> None:

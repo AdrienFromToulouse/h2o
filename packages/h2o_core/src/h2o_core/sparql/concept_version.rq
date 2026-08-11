@@ -1,0 +1,22 @@
+# The version a concept currently carries, so a publish knows which history
+# graph to freeze the outgoing one into.
+#
+# Its own file rather than a field on concept_get.rq: the publish transaction
+# needs exactly this one number and needs it before it writes anything, and
+# reading a wide sparse row set to find one integer would make the transaction
+# depend on the shape of the review card.
+#
+# Absent means version 0. A concept being created has no versionInfo, and the
+# caller treats "no row" as the beginning rather than as an error.
+
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+
+SELECT ?version
+WHERE {
+  GRAPH <h2o:graph/published> {
+    {{concept}} a skos:Concept ;
+                owl:versionInfo ?version .
+  }
+}
+ORDER BY ?version

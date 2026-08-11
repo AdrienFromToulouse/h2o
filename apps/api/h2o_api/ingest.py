@@ -91,7 +91,10 @@ def run(
         # ceremony -- and it is the same function fan-out step 1 calls.
         index = resolver.current()
         if index is None:
-            index = fanout.rebuild_resolver_index()
+            fanout.rebuild_resolver_index()
+            index = resolver.current()
+        if index is None:
+            raise RuntimeError("the resolver index could not be built; is the graph seeded?")
 
         snapshot = graph.load(client=s3_client)
         result = pipeline.ingest_corpus(

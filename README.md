@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/aquaknow.png" alt="AquaKnow" width="180">
+</p>
+
 # h2o
 
 A knowledge platform for a manufacturer of connected, bottle-free water dispensers, built around one idea:

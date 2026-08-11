@@ -34,7 +34,9 @@ __all__ = [
     "GapSource",
     "GapStatus",
     "GapType",
+    "close",
     "dismiss",
+    "exists",
     "gap_key",
     "list_gaps",
     "read_gap",
@@ -300,6 +302,45 @@ def record_miss(
         ),
     )
     return key
+
+
+def close(gap_id: str, *, concept_id: str, run_id: str = "", table_resource: Any = None) -> None:
+    """Mark an entry actioned, naming the publish that answered it.
+
+    Called from fan-out step 2 and nowhere else. ADR-004 §6: the queue closes
+    because a publish closed it, not because a curator clicked on it -- which is
+    why `GET /gaps/{id}/target` is a read and this is the only writer of
+    `actioned`.
+    """
+    target = table_resource or store.gaps_table()
+    target.update_item(
+        Key={"gap_id": gap_id},
+        UpdateExpression=(
+            "SET #status = :actioned, closed_by_run_id = :run, "
+            "    resolved_to = :concept, closed_at = :now"
+        ),
+        ExpressionAttributeNames={"#status": "status"},
+        ExpressionAttributeValues=store.to_dynamo(
+            {
+                ":actioned": GapStatus.actioned.value,
+                ":run": run_id,
+                ":concept": concept_id,
+                ":now": _now(),
+            }
+        ),
+    )
+
+
+def exists(gap_id: str, *, table_resource: Any = None) -> bool:
+    """Whether the queue holds an entry, without parsing it.
+
+    `read_gap` validates the whole entry, which is right when something is going
+    to render it and wrong when the only question is "is there one". The publish
+    transaction asks this *after* its durable write, so a schema quibble in an
+    operational row must not raise on a publish that already landed.
+    """
+    target = table_resource or store.gaps_table()
+    return "Item" in target.get_item(Key={"gap_id": gap_id})
 
 
 def read_gap(gap_id: str, *, table_resource: Any = None) -> GapEntry | None:

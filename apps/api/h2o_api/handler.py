@@ -40,7 +40,14 @@ def lambda_handler(event: dict[str, Any], context: Any) -> Any:
         return ingest.run(event["run_id"], only=event.get("only"))
 
     if action == config.PUBLISH_STEP_ACTION:
-        raise NotImplementedError("the publish fan-out lands in M6")
+        from h2o_api import dispatch
+
+        # One Task per step. The state machine threads its accumulated state
+        # through $.event, so a step reads what the steps before it found.
+        payload = {**(event.get("event") or {}), "run_id": event.get("run_id", "")}
+        if failed := event.get("failed"):
+            payload["failed"] = failed
+        return dispatch.run_step(str(event["step"]), payload)
 
     if action == config.TELEMETRY_REPLAY_ACTION:
         raise NotImplementedError("telemetry replay lands in M7")
