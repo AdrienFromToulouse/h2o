@@ -20,7 +20,8 @@ from typing import Any
 
 import pyoxigraph
 import pytest
-from h2o_core import config, extraction, facts, graph, pipeline, resolver, sparql
+from fakes import FakeTable
+from h2o_core import config, extraction, facts, gaps, graph, pipeline, resolver, sparql
 from h2o_core.chunking import Chunk, SourceText
 from h2o_core.registry import DocumentRecord, load_manifest
 
@@ -31,43 +32,9 @@ REGISTRY = json.loads((DOCS / "registry.json").read_text())
 GAS_BOTTLE = re.compile(r"gas\s+bottles?", re.IGNORECASE)
 
 
-class FakeGapsTable:
-    """DynamoDB's UpdateItem, enough of it to count and merge.
-
-    Supports the ADD and if_not_exists forms gaps.record_miss uses, because the
-    whole point of that expression is that two writers cannot lose a count, and
-    a fake that ignored ADD would let a read-modify-write pass this suite.
-    """
-
-    def __init__(self) -> None:
-        self.items: dict[str, dict[str, Any]] = {}
-
-    def update_item(self, *, Key: dict[str, Any], **kwargs: Any) -> None:  # noqa: N803
-        names = kwargs.get("ExpressionAttributeNames", {})
-        values = kwargs.get("ExpressionAttributeValues", {})
-        item = self.items.setdefault(
-            Key["gap_id"], {"gap_id": Key["gap_id"], "counts": {}, "evidence": {}, "variants": {}}
-        )
-
-        source = names["#src"]
-        item["counts"][source] = item["counts"].get(source, 0) + 1
-        item["total_occurrences"] = item.get("total_occurrences", 0) + 1
-        item["evidence"][names["#eid"]] = values[":evidence"]
-        item["variants"][names["#variant"]] = 1
-        item.setdefault("surface_form", values[":surface"])
-        item.setdefault("normalised_form", values[":normalised"])
-        item.setdefault("first_seen", values[":now"])
-        item.setdefault("gap_type", values[":gap_type"])
-        item.setdefault("status", values[":open"])
-        item["last_seen"] = values[":now"]
-        item["suggestions"] = values[":suggestions"]
-
-    def get_item(self, *, Key: dict[str, Any]) -> dict[str, Any]:  # noqa: N803
-        item = self.items.get(Key["gap_id"])
-        return {"Item": item} if item else {}
-
-    def scan(self) -> dict[str, Any]:
-        return {"Items": list(self.items.values())}
+def gaps_table() -> FakeTable:
+    """The real table has no sort key: three sources land on one item (ADR-004)."""
+    return FakeTable(hash_key="gap_id")
 
 
 def _sentence_reader(chunk: Chunk, source: SourceText, **_: Any) -> extraction.Extraction:
@@ -157,7 +124,7 @@ def test_the_corpus_ingests(
         store,
         index=index,
         extract=_sentence_reader,
-        gaps_table=FakeGapsTable(),
+        gaps_table=gaps_table(),
         write_vectors=False,
         run_id="test-run",
     )
@@ -178,7 +145,7 @@ def test_gas_bottle_holds_twelve_claims_across_three_documents(
     the count the console shows is the count the corpus contains.
     """
     store = pyoxigraph.Store()
-    table = FakeGapsTable()
+    table = gaps_table()
 
     pipeline.ingest_corpus(
         corpus,
@@ -207,7 +174,7 @@ def test_the_gap_queue_holds_one_entry_for_every_spelling(
     splitting them would make the queue look longer than the work actually is.
     """
     store = pyoxigraph.Store()
-    table = FakeGapsTable()
+    table = gaps_table()
 
     pipeline.ingest_corpus(
         corpus,
@@ -218,15 +185,28 @@ def test_the_gap_queue_holds_one_entry_for_every_spelling(
         write_vectors=False,
     )
 
-    entry = table.items["gas bottle"]
-    assert entry["counts"]["ingestion"] == 12
-    assert entry["total_occurrences"] == 12
-    assert entry["status"] == "open"
-    assert len(entry["evidence"]) > 0
+    # Read back through the library rather than off the item, so the assertion
+    # is about what a curator sees and survives a change of storage shape -- the
+    # per-source counters are flat attributes because DynamoDB's ADD refuses a
+    # nested path, and nothing above gaps.py should have to know that.
+    entry = gaps.read_gap("gas bottle", table_resource=table)
 
-    for evidence in entry["evidence"].values():
-        assert GAS_BOTTLE.search(evidence["text"]), "evidence must be the sentence, verbatim"
-        assert ":" in evidence["locator"], "evidence must carry source_file:line_range"
+    assert entry is not None
+    assert entry.counts == {"ingestion": 12}
+    assert entry.total_occurrences == 12
+    assert entry.status is gaps.GapStatus.open
+    assert entry.evidence
+
+    # The corpus writes one spelling twelve times, and one of those twelve is
+    # wrapped across a line as "gas\nbottle". Both reach the queue as the same
+    # variant, which is the merge working: what makes them one entry is the
+    # gap key, and every variant on the entry has to fold onto it.
+    assert entry.variants
+    assert {gaps.gap_key(v) for v in entry.variants} == {entry.gap_id}
+
+    for evidence in entry.evidence:
+        assert GAS_BOTTLE.search(evidence.text), "evidence must be the sentence, verbatim"
+        assert ":" in evidence.locator, "evidence must carry source_file:line_range"
 
 
 def test_both_seeded_contradictions_are_flagged(
@@ -241,7 +221,7 @@ def test_both_seeded_contradictions_are_flagged(
         store,
         index=index,
         extract=_sentence_reader,
-        gaps_table=FakeGapsTable(),
+        gaps_table=gaps_table(),
         write_vectors=False,
     )
 
@@ -264,7 +244,7 @@ def test_re_ingesting_the_corpus_changes_nothing(
     kwargs: dict[str, Any] = {
         "index": index,
         "extract": _sentence_reader,
-        "gaps_table": FakeGapsTable(),
+        "gaps_table": gaps_table(),
         "write_vectors": False,
     }
 
@@ -286,7 +266,7 @@ def test_claims_carry_the_stage_that_resolved_them(
         store,
         index=index,
         extract=_sentence_reader,
-        gaps_table=FakeGapsTable(),
+        gaps_table=gaps_table(),
         write_vectors=False,
     )
 

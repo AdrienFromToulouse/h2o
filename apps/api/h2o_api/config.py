@@ -1,8 +1,9 @@
 """Where this process is running, and the action markers that say what to do.
 
 `IS_LAMBDA` is the only environment discriminator in h2o, and it is read in
-exactly one place: h2o_api.fanout, which uses it to decide *who calls* the
-fan-out steps. It must never reach a step body. apps/api/tests asserts that.
+exactly one place: h2o_api.dispatch, which uses it to decide *who calls* the
+asynchronous work -- the ingest run, and the publish fan-out steps. It must
+never reach a step body. apps/api/tests asserts that.
 """
 
 import os

@@ -26,7 +26,7 @@ from typing import Any
 
 import pyoxigraph
 
-from h2o_core import conflicts, extraction, facts, gaps, resolve, vectors
+from h2o_core import conflicts, extraction, facts, gaps, registry, resolve, vectors
 from h2o_core.chunking import chunk_document, read_source
 from h2o_core.facts import Claim
 from h2o_core.gaps import GapEvidence, GapSource, GapType
@@ -77,6 +77,39 @@ class IngestResult:
             "rejections": len(self.rejections),
         }
 
+    def as_steps(self) -> list[dict[str, Any]]:
+        """The run's six rows, named for ADR-002's six steps.
+
+        Rendered here rather than in the router so that the ingest run and the
+        publish fan-out run reach `/runs/{id}` in the same shape -- ADR-005 asks
+        the console to reuse one polling hook, and it can only do that if one
+        step row means the same thing whichever run produced it.
+        """
+        return [
+            {"name": "register", "counts": {"documents": self.documents}},
+            {
+                "name": "chunk_and_index",
+                "counts": {"chunks": self.chunks, "vectors": self.vectors_written},
+            },
+            {
+                "name": "extract",
+                "counts": {"facts": self.facts_extracted, "rejections": len(self.rejections)},
+            },
+            {
+                "name": "resolve",
+                "counts": {
+                    "active": self.claims_active,
+                    "held": self.claims_held,
+                    "gaps": self.gaps_recorded,
+                },
+            },
+            {"name": "detect_conflicts", "counts": {"conflicts": self.conflicts_found}},
+            {
+                "name": "persist",
+                "counts": {"claims": self.claims_active + self.claims_held},
+            },
+        ]
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
@@ -92,11 +125,20 @@ def ingest_document(
     extract: Callable[..., extraction.Extraction] | None = None,
     run_id: str | None = None,
     gaps_table: Any = None,
+    registry_table: Any = None,
     vectors_client: Any = None,
     write_vectors: bool = True,
 ) -> IngestResult:
     """Run all six steps over one document."""
     result = IngestResult(documents=1)
+
+    # 1. Register. ADR-002: a document is registered and *then* ingested, never
+    #    guessed at and never silently skipped. Registering first rather than on
+    #    success means a run that dies mid-extraction still leaves a record that
+    #    the document was attempted, which is the difference between a corpus
+    #    with a known failure in it and a corpus with a hole nobody can see.
+    if registry_table is not None:
+        registry.register(record, table_resource=registry_table)
 
     # 2. Normalize -> chunk. The stored snippet is the original text; this
     #    reading exists so a citation can be checked and located.
@@ -216,6 +258,7 @@ def ingest_corpus(
     extract: Callable[..., extraction.Extraction] | None = None,
     run_id: str | None = None,
     gaps_table: Any = None,
+    registry_table: Any = None,
     vectors_client: Any = None,
     write_vectors: bool = True,
 ) -> IngestResult:
@@ -238,6 +281,7 @@ def ingest_corpus(
                 extract=extract,
                 run_id=run_id,
                 gaps_table=gaps_table,
+                registry_table=registry_table,
                 vectors_client=vectors_client,
                 write_vectors=write_vectors,
             )

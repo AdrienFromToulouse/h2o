@@ -29,6 +29,7 @@ __all__ = [
     "DocumentRecord",
     "load_manifest",
     "meta_for",
+    "parse_manifest",
     "register",
     "registered",
 ]
@@ -76,16 +77,22 @@ class DocumentRecord(BaseModel):
         return self.format is DocFormat.html
 
 
-def load_manifest(path: Path) -> list[DocumentRecord]:
-    """Read data/docs/registry.json.
+def parse_manifest(payload: bytes | str) -> list[DocumentRecord]:
+    """The manifest, from wherever it was read.
 
-    The file carries seeded_contradictions and seeded_gap alongside the
-    documents; those are assertions for scripts/check_corpus.py rather than
-    registry data, so they are deliberately not read here. The pipeline must
-    discover the contradictions from the documents, not be told about them.
+    It carries seeded_contradictions and seeded_gap alongside the documents;
+    those are assertions for scripts/check_corpus.py rather than registry data,
+    so they are deliberately not read here. The pipeline must discover the
+    contradictions from the documents, not be told about them.
     """
-    payload = json.loads(path.read_text())
-    return [DocumentRecord.model_validate(entry) for entry in payload["documents"]]
+    document = json.loads(payload)
+    return [DocumentRecord.model_validate(entry) for entry in document["documents"]]
+
+
+def load_manifest(path: Path) -> list[DocumentRecord]:
+    """Read data/docs/registry.json off disk. The API reads the same file out of
+    the raw-docs bucket, through `parse_manifest`."""
+    return parse_manifest(path.read_bytes())
 
 
 def register(record: DocumentRecord, *, table_resource: Any = None) -> None:

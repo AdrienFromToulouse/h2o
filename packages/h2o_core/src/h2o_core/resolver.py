@@ -66,18 +66,31 @@ class ResolverIndex:
     def exact(self, normalised: str) -> list[str]:
         return self.by_label.get(normalised, [])
 
-    def nearest(self, vector: list[float], k: int = 5) -> list[Candidate]:
+    def nearest(
+        self, vector: list[float], k: int = 5, *, include_machine: bool = False
+    ) -> list[Candidate]:
         """Cosine similarity over label vectors.
 
         A plain dot product because Titan V2 returns unit vectors, which is also
         why this needs no numpy: 320 labels at 1024 dimensions is a few
         milliseconds in pure Python, and a compiled dependency in a Lambda that
         already carries a Rust wheel is not worth that.
+
+        **The machine scheme is excluded by default**, and the default is the
+        safe one because every current caller needs it. Firmware's names for
+        things are not candidates for a document mention -- a bulletin saying
+        "gas bottle" must not resolve to `instrument.bottles_avoided` -- and
+        they are certainly not attachment points to offer a curator, which is
+        the leakage ADR-003 §3.1 forbids and ADR-006 §2 keeps behind a toggle.
+        Instrument names still resolve: they match exactly, which is the only
+        way ADR-003 maps them anyway.
         """
         scored: dict[str, tuple[float, str]] = {}
         for label, candidate in self.vectors.items():
             score = sum(a * b for a, b in zip(vector, candidate, strict=False))
             for concept_id in self.by_label.get(label, []):
+                if not include_machine and self.schemes.get(concept_id) == config.MACHINE_SCHEME:
+                    continue
                 best = scored.get(concept_id)
                 if best is None or score > best[0]:
                     scored[concept_id] = (score, label)

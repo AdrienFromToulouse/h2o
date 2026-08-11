@@ -35,7 +35,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> Any:
     action = event.get("h2o_action") if isinstance(event, dict) else None
 
     if action == config.INGEST_ACTION:
-        raise NotImplementedError("ingestion lands in M4")
+        from h2o_api import ingest
+
+        return ingest.run(event["run_id"], only=event.get("only"))
 
     if action == config.PUBLISH_STEP_ACTION:
         raise NotImplementedError("the publish fan-out lands in M6")

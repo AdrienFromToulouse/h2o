@@ -12,7 +12,8 @@ CFN      = infra/cloudformation
 
 .PHONY: help install lock lint format typecheck test check check-vocab check-corpus cfn-lint \
         deploy-data-plane deploy-graph deploy-data deploy-telemetry deploy-orchestration \
-        deploy-frontend outputs seed-graph dev-api api-reqs sam-build deploy-api clean
+        deploy-frontend outputs seed-graph seed-docs ingest gaps dev-api api-reqs sam-build \
+        deploy-api clean
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -59,6 +60,12 @@ cfn-lint:  ## Validate every CloudFormation template
 seed-graph: check-vocab  ## Load vocab/*.ttl into h2o:graph/published (gated first)
 	H2O_ENV=$(ENV) AWS_REGION=$(REGION) uv run python scripts/seed_graph.py
 
+# The manifest ships with the corpus rather than with the code, so the bucket
+# is the source of truth for what has been made available to ingest -- and the
+# worker reads registry.json from the same place it reads the documents.
+seed-docs: check-corpus  ## Upload data/docs/ (documents + registry.json) to the raw-docs bucket
+	aws s3 sync data/docs/ s3://h2o-$(ENV)-raw-docs/ --delete --region $(REGION)
+
 # --------------------------------------------------------------- local serving
 # These call real AWS. `check` is the only offline target.
 
@@ -83,6 +90,16 @@ sam-build: api-reqs  ## Build the Lambda bundle (arm64 manylinux_2_28 wheels, no
 
 deploy-api: sam-build  ## 40: build and deploy the vocabulary API
 	cd $(CFN) && sam deploy --config-env $(ENV)
+
+# ------------------------------------------------------------------- exercising
+# The API is IAM-authorised, so these sign their requests. scripts/api.py is the
+# same tool the README's end-to-end walkthrough is run with.
+
+ingest:  ## Start an ingest run against the deployed API and poll it to completion
+	H2O_ENV=$(ENV) AWS_REGION=$(REGION) uv run python scripts/api.py POST /ingest --wait
+
+gaps:  ## Show the open gap queue, ordered by occurrences
+	H2O_ENV=$(ENV) AWS_REGION=$(REGION) uv run python scripts/api.py GET /gaps
 
 clean:  ## Remove build artefacts
 	rm -rf $(CFN)/.aws-sam apps/api/vendor apps/api/requirements.txt .pytest_cache

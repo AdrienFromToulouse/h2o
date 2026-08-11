@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from h2o_api.routers import health, vocabulary
+from h2o_api.routers import gaps, health, ingest, runs, vocabulary
 
 app = FastAPI(
     title="h2o vocabulary API",
@@ -14,3 +14,6 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(vocabulary.router)
+app.include_router(ingest.router)
+app.include_router(runs.router)
+app.include_router(gaps.router)

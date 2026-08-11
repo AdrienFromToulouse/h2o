@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from h2o_core import config
 from h2o_core.chunking import Chunk, SourceText, locate
+from h2o_core.normalize import normalise
 
 __all__ = ["ExtractedFact", "Extraction", "Rejection", "extract_chunk"]
 
@@ -250,6 +251,26 @@ def _gate(payload: dict[str, Any], chunk: Chunk, source: SourceText) -> Extracti
         return result
 
     for fact in parsed.facts:
+        # A subject that normalises to nothing names no term. It cannot resolve,
+        # and it cannot become a gap entry either, because a gap is keyed by the
+        # surface form a curator would add a label for and there is no such
+        # form. Nova 2 Lite really does emit these -- a bare unit, a stray
+        # bullet, a quotation mark -- and without this the run dies further
+        # downstream on DynamoDB refusing an empty key, which reports the
+        # symptom rather than the fact that was unusable.
+        if not normalise(fact.subject):
+            result.rejections.append(
+                Rejection(
+                    source_file=chunk.source_file,
+                    reason="the subject normalises to nothing, so it names no term",
+                    subject=fact.subject,
+                    predicate=fact.predicate,
+                    value=fact.value,
+                    snippet=fact.snippet,
+                ).truncated()
+            )
+            continue
+
         snippet = _strip_gutter(fact.snippet).strip()
 
         if not snippet:

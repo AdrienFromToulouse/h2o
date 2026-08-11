@@ -165,8 +165,19 @@ Resources:
                 - !Sub arn:${AWS::Partition}:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/h2o-${Env}-vectors/index/*
             - Sid: OperationalTables
               Effect: Allow
+              # Scan is here on purpose, for two reads that cannot be queries.
+              # The gap queue's resurface rule (ADR-004) is computed over the
+              # dismissed rows as well as the open ones, so "give me the open
+              # gaps" is not expressible as a Query on the status index -- an
+              # entry dismissed at 3 occurrences and now sitting at 300 has to
+              # be read in order to be promoted back. The document registry is
+              # scanned for the same shape of reason: "every document we hold"
+              # has no partition key. Both tables are small by construction; a
+              # curation backlog that needed pagination would be a different
+              # product.
               Action:
                 - dynamodb:Query
+                - dynamodb:Scan
                 - dynamodb:GetItem
                 - dynamodb:BatchGetItem
                 - dynamodb:PutItem

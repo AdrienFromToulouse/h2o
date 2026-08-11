@@ -101,6 +101,43 @@ RESOLVE_MARGIN = float(os.getenv("H2O_RESOLVE_MARGIN", "0.05"))
 #: How many candidates a gap entry carries as its suggested attachment point.
 SHORTLIST_SIZE = 5
 
+#: The scheme holding firmware's names for things (ADR-003). Named once because
+#: two rules depend on it: the console never shows it by default (ADR-006 §2),
+#: and the resolver's embedding stage never ranks it -- a document mention must
+#: not resolve to an instrument, and a curator must never be offered one as a
+#: place to attach a business term.
+MACHINE_SCHEME = "telemetry"
+
+# ---------------------------------------------------------------- the read path
+
+#: The longest phrase the question sweep will try to resolve, in whitespace
+#: words. The vocabulary's longest label is three words, and `normalise` splits
+#: a hyphen, so "Single-Use Bottles Avoided" is written three ways a reader
+#: might type it and four the index might hold. Four covers all of them; five
+#: would only buy n-grams no label can match.
+MAX_TERM_WORDS = 4
+
+#: How many phrases from one question may reach the embedding stage. Exact
+#: matches are free -- they are a dictionary lookup -- but every remaining
+#: phrase costs one Titan call, and a long question has quadratically many. The
+#: cap is stated rather than emergent so a slow answer has a known ceiling; the
+#: phrases dropped are the shortest, which are the least specific.
+MAX_CANDIDATE_TERMS = 12
+
+#: How far retrieval walks from a resolved concept before searching. One hop
+#: reaches a term's sub-terms, its related terms and the telemetry concepts
+#: mapped to it, which is the difference between asking about "filter" and
+#: finding what the documents say about carbon filters.
+EXPAND_DEPTH = 1
+
+#: How close an abstention must come to an existing term before it is worth a
+#: curator's attention. Deliberately below RESOLVE_THRESHOLD: a phrase the
+#: cascade would not resolve can still be a missing label, and that gap is the
+#: whole point. Deliberately well above zero: a question is mostly function
+#: words, and "how do i" is not a vocabulary gap. This is the one number that
+#: decides what a chat turn is allowed to put in front of a person.
+CHAT_GAP_FLOOR = float(os.getenv("H2O_CHAT_GAP_FLOOR", "0.65"))
+
 # ------------------------------------------------------------- the gap queue
 
 #: A dismissed surface form resurfaces when its count grows by this multiple:

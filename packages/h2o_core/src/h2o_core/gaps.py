@@ -77,6 +77,17 @@ class GapSource(StrEnum):
     telemetry = "telemetry"
 
 
+#: Prefix for the flat per-source counters. They are flat rather than a `counts`
+#: map because DynamoDB's ADD -- the only atomic counter it offers -- refuses a
+#: nested path. See `record_miss`. Reassembled into `GapEntry.counts` on read, so
+#: nothing above this module sees the storage shape.
+COUNT_PREFIX = "count_"
+
+
+def count_attribute(source: GapSource | str) -> str:
+    return f"{COUNT_PREFIX}{GapSource(source).value}"
+
+
 class GapType(StrEnum):
     """A closed set, so the console renders each as one specific question
     rather than a generic form (ADR-004)."""
@@ -197,10 +208,33 @@ def record_miss(
     An UpdateItem with ADD, never a PutItem. Ingestion and chat can write the
     same entry concurrently, and a read-modify-write would lose one of the two
     counts -- which is precisely the number the console orders the queue by.
+
+    **Two calls, because of two hard DynamoDB rules, both verified against the
+    real service rather than assumed.**
+
+    ADD works on top-level attributes only. `ADD counts.ingestion :one` is a
+    ValidationException, not a slow path, so the per-source counters are stored
+    flat as `count_{source}` and reassembled into a `counts` map on read. This is
+    the one part of the item that must never lose a write, and ADD on a top-level
+    number is the only atomic counter DynamoDB offers.
+
+    A nested SET needs its parent map to already exist: `SET evidence.#eid = :e`
+    against an item with no `evidence` attribute is the same ValidationException.
+    So the first call creates the two maps with if_not_exists and the second
+    writes into them. Both calls are idempotent and neither reads first, so two
+    concurrent writers still cannot lose a count.
     """
     target = table_resource or store.gaps_table()
     key = gap_key(surface_form)
     now = _now()
+
+    if not key:
+        # Nothing upstream should offer one: the extraction gate rejects a
+        # subject that normalises to nothing, because it names no term a curator
+        # could add a label for. Said here as h2o's own invariant rather than
+        # left to DynamoDB, whose refusal names an empty partition key and not
+        # the reason there was nothing to key on.
+        raise ValueError(f"{surface_form!r} normalises to nothing, so it names no term")
 
     ranked = [
         {
@@ -212,35 +246,29 @@ def record_miss(
         for c in (suggestions or [])
     ]
 
-    expression = (
-        "ADD #counts.#src :one, total_occurrences :one "
-        "SET last_seen = :now, "
-        "    surface_form = if_not_exists(surface_form, :surface), "
-        "    normalised_form = if_not_exists(normalised_form, :normalised), "
-        "    first_seen = if_not_exists(first_seen, :now), "
-        "    gap_type = if_not_exists(gap_type, :gap_type), "
-        "    #status = if_not_exists(#status, :open), "
-        "    run_id = :run_id, "
-        "    suggestions = :suggestions, "
-        "    suggested_scheme = :scheme, "
-        "    evidence.#eid = :evidence, "
-        "    variants.#variant = :one_int"
-    )
-
     target.update_item(
         Key={"gap_id": key},
-        UpdateExpression=expression,
+        UpdateExpression=(
+            "ADD total_occurrences :one, #csrc :one "
+            "SET last_seen = :now, "
+            "    surface_form = if_not_exists(surface_form, :surface), "
+            "    normalised_form = if_not_exists(normalised_form, :normalised), "
+            "    first_seen = if_not_exists(first_seen, :now), "
+            "    gap_type = if_not_exists(gap_type, :gap_type), "
+            "    #status = if_not_exists(#status, :open), "
+            "    run_id = :run_id, "
+            "    suggestions = :suggestions, "
+            "    suggested_scheme = :scheme, "
+            "    evidence = if_not_exists(evidence, :empty), "
+            "    variants = if_not_exists(variants, :empty)"
+        ),
         ExpressionAttributeNames={
-            "#counts": "counts",
-            "#src": source.value,
+            "#csrc": count_attribute(source),
             "#status": "status",
-            "#eid": _evidence_id(evidence),
-            "#variant": surface_form,
         },
         ExpressionAttributeValues=store.to_dynamo(
             {
                 ":one": 1,
-                ":one_int": 1,
                 ":now": now,
                 ":surface": surface_form,
                 ":normalised": key,
@@ -249,6 +277,24 @@ def record_miss(
                 ":run_id": run_id,
                 ":suggestions": ranked,
                 ":scheme": suggested_scheme,
+                ":empty": {},
+            }
+        ),
+    )
+
+    # Evidence is keyed by locator hash so the same sentence seen twice is one
+    # piece of evidence, and variants by raw surface form so the entry can show
+    # which spellings it merged.
+    target.update_item(
+        Key={"gap_id": key},
+        UpdateExpression="SET evidence.#eid = :evidence, variants.#variant = :one",
+        ExpressionAttributeNames={
+            "#eid": _evidence_id(evidence),
+            "#variant": surface_form,
+        },
+        ExpressionAttributeValues=store.to_dynamo(
+            {
+                ":one": 1,
                 ":evidence": evidence.model_dump(mode="json"),
             }
         ),
@@ -330,6 +376,16 @@ def _to_entry(item: dict[str, Any]) -> GapEntry | None:
     evidence_map = clean.pop("evidence", {}) or {}
     variants = clean.pop("variants", {}) or {}
 
+    # The flat count_{source} attributes become the counts map the rest of h2o
+    # reads. Sources absent from the item are absent from the map rather than
+    # zero: "never seen in chat" and "seen in chat zero times" are the same
+    # fact, and a zero in the console would read as a measurement.
+    counts = {
+        source.value: clean.pop(count_attribute(source))
+        for source in GapSource
+        if clean.get(count_attribute(source)) is not None
+    }
+
     evidence = sorted(
         (GapEvidence.model_validate(e) for e in evidence_map.values()),
         key=lambda e: e.occurred_at,
@@ -347,6 +403,7 @@ def _to_entry(item: dict[str, Any]) -> GapEntry | None:
     return GapEntry.model_validate(
         {
             **clean,
+            "counts": counts,
             "evidence": [e.model_dump(mode="json") for e in capped],
             "variants": sorted(variants),
         }

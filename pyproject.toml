@@ -61,5 +61,9 @@ testpaths = ["packages/h2o_core/tests", "apps/agent/tests", "apps/api/tests"]
 # The apps are `package = false`, so they are never installed; putting their
 # directories on the path is what lets the test suites import them.
 pythonpath = ["apps/agent", "apps/api"]
-addopts = "-q"
+# importlib import mode, so the two suites may both hold a test_gaps.py. Under
+# the default prepend mode a shared basename across un-packaged test directories
+# is a collection error, and "rename the file" would make pytest's import
+# mechanics decide what a test is called.
+addopts = "-q --import-mode=importlib"
 asyncio_mode = "auto"

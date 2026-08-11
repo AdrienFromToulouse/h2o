@@ -29,6 +29,7 @@ __all__ = [
     "concept",
     "concept_iri",
     "concept_labels",
+    "neighbours",
     "scheme_id",
     "scheme_iri",
     "scheme_tree",
@@ -132,7 +133,7 @@ def scheme_tree(store: pyoxigraph.Store, *, include_machine: bool = False) -> Sc
     schemes: list[SchemeRef] = []
     top: dict[str, list[ConceptRef]] = {}
     for identifier in sorted(counts):
-        if identifier == "telemetry" and not include_machine:
+        if identifier == config.MACHINE_SCHEME and not include_machine:
             continue
         by_language = titles.get(identifier, {})
         schemes.append(
@@ -190,6 +191,52 @@ def _first_object(store: pyoxigraph.Store, subject: object, predicate_iri: str) 
     for quad in store.quads_for_pattern(subject, predicate, None, published):  # type: ignore[arg-type]
         return _text(quad.object)
     return None
+
+
+def neighbours(store: pyoxigraph.Store, concept_id: str) -> list[str]:
+    """Concepts one hop from this one: sub-terms, related terms, and mappings.
+
+    Read with ``quads_for_pattern`` rather than through ``concept()`` because
+    this is called once per concept while retrieval expands, and ``concept()``
+    walks every scheme to count them for the review card. Reading the four
+    relations directly is the same graph and a fraction of the work.
+
+    **``skos:broader`` is deliberately absent.** Walking up from "Carbon Filter"
+    reaches "Consumable" and from there every other consumable, so a question
+    about one filter would retrieve the whole category. Down, sideways and
+    across schemes narrows what is searched; up widens it back to the corpus,
+    which is the vector search this design exists to avoid.
+
+    Both directions of each relation are read. ``skos:related`` is symmetric
+    and the mapping properties are authored on the machine side (ADR-003), so a
+    telemetry term reaches its business concept and the business concept reaches
+    back.
+    """
+    iri = concept_iri(concept_id)
+    target = pyoxigraph.NamedNode(iri)
+    published = pyoxigraph.NamedNode(config.PUBLISHED_GRAPH)
+    found: set[str] = set()
+
+    def collect(term: object) -> None:
+        text = _text(term)
+        if text.startswith((config.ID_NAMESPACE, config.TELEMETRY_NAMESPACE)):
+            found.add(slug(text))
+
+    # Sub-terms, through the inverse of broader: skos:narrower is not asserted.
+    for quad in store.quads_for_pattern(
+        None, pyoxigraph.NamedNode(f"{SKOS}broader"), target, published
+    ):
+        collect(quad.subject)
+
+    for property_iri in (f"{SKOS}related", *_MATCH_KINDS):
+        predicate = pyoxigraph.NamedNode(property_iri)
+        for quad in store.quads_for_pattern(target, predicate, None, published):
+            collect(quad.object)
+        for quad in store.quads_for_pattern(None, predicate, target, published):
+            collect(quad.subject)
+
+    found.discard(concept_id)
+    return sorted(found)
 
 
 def concept(store: pyoxigraph.Store, concept_id: str) -> ConceptDetail | None:
