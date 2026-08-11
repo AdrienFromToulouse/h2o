@@ -52,6 +52,8 @@ Integrity failures ([ADR-005](005-governance-and-downstream-orchestration.md)) a
 
 A **Show technical detail** toggle reveals the IRI, the Turtle, and the OTEL bindings for whoever wants them. The toggle exists so that hiding this material costs nothing; it defaults off and its state is not remembered across concepts, so the technical view is something you opt into per concept rather than a mode you get stuck in.
 
+**One carve-out, because "no OTEL attribute name" is not quite the rule.** OTEL **attribute keys and values** — `component.type`, `fault.code=E42`, `water.output=sparkling` — never appear outside the toggle. Those are the firmware's private naming, and letting them leak is exactly what a separate `hs:telemetry` scheme exists to prevent ([ADR-003](003-otel-fleet-signals-to-skos.md)). **Instrument names** — `dispenser.co2.pressure` — do appear, read-only, in the two places named below: the *Machine signals* row of the review card, and the fleet variant of the chat concept chip. An instrument name is what the machine measures rather than what it calls a thing, it is the only honest way to show that a business term is wired to real telemetry, and both surfaces present it as a fact about the term rather than as something to edit.
+
 ### 3. The review card
 
 ```

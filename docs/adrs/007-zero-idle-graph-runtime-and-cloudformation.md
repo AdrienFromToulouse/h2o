@@ -30,16 +30,18 @@ Against that floor, consider the artefact being governed. The vocabulary is 80 c
 
 **`NeptuneStore`.** SigV4-signed HTTPS to the Neptune SPARQL endpoint, Lambda in VPC. Written and CloudFormation-authored; not deployed by default.
 
-Both speak the **SPARQL 1.1 Query and Update protocol**, so the templates in `packages/h2o_core/sparql/` are byte-identical across backends. Selection is by `H2O_GRAPH_BACKEND`.
+Both speak the **SPARQL 1.1 Query and Update protocol**, so the templates in `packages/h2o_core/src/h2o_core/sparql/` are byte-identical across backends. Selection is by `H2O_GRAPH_BACKEND`.
 
 The same shape covers the other external dependencies, for the same reason:
 
-| Port | AWS | Local / default |
+| Port | AWS | Alternative |
 | --- | --- | --- |
 | `GraphStore` | Neptune SPARQL endpoint | embedded Oxigraph over S3 |
 | `VectorStore` | S3 Vectors | NumPy cosine index |
 | `OtelSource` | collector store | replayed fixture ([ADR-003](003-otel-fleet-signals-to-skos.md)) |
 | `Orchestrator` | Step Functions | synchronous in-process runner |
+
+**Only the `GraphStore` row ships both columns.** Oxigraph-over-S3 is the default runtime and Neptune is the written-but-undeployed swap, because that is the choice this ADR exists to make. For the other three the right-hand column describes **the test fakes and nothing else**: the deployed system uses S3 Vectors, the fleet-signal store, and Step Functions, and there is no second adapter to keep working. `OtelSource`'s "replayed fixture" is not a local substitute either — ADR-003 puts live OTLP ingest out of scope, so replaying the recorded fixture through the mapping code *is* the AWS path. Shipping unused alternatives would mean maintaining a second implementation that no user ever exercises, which is how a port becomes a liability rather than a seam.
 
 Embeddings come from Bedrock Titan in every configuration, including local development, because it works from a laptop with credentials and substituting a different embedding model would invalidate local retrieval results.
 
@@ -67,8 +69,9 @@ Stacks `00`–`60` are the default deployment. The `9x` stacks are the Neptune s
 ```
 infra/cloudformation/
   00-graph.yaml         versioned S3 dataset bucket + publish lock table
-  10-data.yaml          S3 Vectors bucket + index, raw-docs bucket, DynamoDB
-                        vocabulary-gaps + curation-audit + document-registry
+  10-data.yaml          S3 Vectors bucket + document and label indexes, raw-docs
+                        bucket, DynamoDB vocabulary-gaps + curation-audit +
+                        document-registry + runs
   20-telemetry.yaml     OTEL collector ingest + fleet-signal store (ADR-003)
   30-orchestration.yaml EventBridge bus + Step Functions publish fan-out (ADR-005)
   40-api.yaml           FastAPI Lambda + API Gateway (IAM auth), no VPC
@@ -78,6 +81,15 @@ infra/cloudformation/
                         bulk-loader role + staging bucket
   91-network.yaml       [swap only] VPC, private subnets, SGs, VPC endpoints
 ```
+
+Two resources in `10-data.yaml` are worth naming because they are easy to omit. The **runs table** is what makes ADR-005's fourth fan-out step ("record the run") and the console's polling contract possible; ingest, publish and telemetry runs share one envelope so the console has one polling hook rather than three. The **label index** is a second S3 Vectors index holding concept-label embeddings, separate from the document index because its lifecycle is the publish fan-out rather than ingestion: it is rebuilt when the vocabulary changes, and it backs both the resolver cascade's embedding stage and the gap queue's attachment shortlist ([ADR-004](004-vocabulary-gap-queue.md)).
+
+Every stack is plain CloudFormation. Two of them could have been another tool and deliberately are not:
+
+- **S3 Vectors** now ships `AWS::S3Vectors::VectorBucket` and `AWS::S3Vectors::Index`, so the bucket and both indexes are declared rather than created by a bootstrap script.
+- **AgentCore** ships `AWS::BedrockAgentCore::Runtime` and `AWS::BedrockAgentCore::RuntimeEndpoint`. CDK would build and push the container image as part of a deploy, which is genuinely convenient, but it hides the ECR repository this stack is supposed to own and puts a Node toolchain in a Python repository. The image build is an explicit `make agent-push` instead.
+
+`40-api.yaml` carries `Transform: AWS::Serverless-2016-10-31`. SAM is a CloudFormation macro rather than a separate system, so a SAM template is a CloudFormation template; `sam build` is used only because it is what runs the Lambda's build step.
 
 `90-neptune.yaml` carries a prominent cost warning, defaults to `MinCapacity: 1.0`, and ships with a `make graph-down` target plus an EventBridge-scheduled re-stop Lambda, because a stopped cluster restarts itself after seven days.
 
@@ -99,7 +111,7 @@ infra/cloudformation/
 - **Oxigraph's own maintainers state that "SPARQL query evaluation has not been optimized yet."** The project prioritises correctness over speed. At a few thousand triples this is irrelevant, and it is recorded here so this choice is never mistaken for a production-database endorsement at scale.
 - **Every publish rewrites the whole dataset** to S3. Correct at kilobytes, wrong at gigabytes. This is the first swap trigger.
 - **One writer.** The conditional PUT makes a collision *safe*, not *concurrent*: the loser reloads and retries. This is our own concurrency control and needs an explicit lost-update test.
-- **Packaging.** `pyoxigraph` is a compiled Rust wheel and needs a build matching the Lambda architecture. Handled by a container-image Lambda, but it is a real build step rather than `pip install` and done. The publish path additionally carries pySHACL and rdflib for the integrity gate ([ADR-005](005-governance-and-downstream-orchestration.md)); pySHACL offers an optional pyoxigraph backend, so the two compose rather than each keeping its own copy of the graph.
+- **Packaging.** `pyoxigraph` is a compiled Rust wheel and needs a build matching the Lambda architecture. It publishes `manylinux_2_28_aarch64` wheels and Lambda's `python3.13` runtime is Amazon Linux 2023 (glibc 2.34), so the function ships as a **zip**: the build pins `--python-platform aarch64-manylinux_2_28` and then asserts the resulting `.so` is actually aarch64. That assertion is not ceremony. The obvious value, `manylinux2014`, is an alias for glibc 2.17, which *rejects* the wheel, silently falls back to the sdist, and tries to compile Rust — on a macOS build host that can succeed and put a Mach-O object inside an arm64 artefact. A container-image Lambda remains the documented escape hatch if the fact graph ever pushes the bundle past Lambda's 250 MB unzipped limit; the vocabulary alone does not come close. The publish path additionally carries pySHACL and rdflib for the integrity gate ([ADR-005](005-governance-and-downstream-orchestration.md)), both pure-Python wheels; pySHACL offers an optional pyoxigraph backend, so the two compose rather than each keeping its own copy of the graph.
 - **Cold-start load ties graph size to Lambda memory.** The fact graph from ingestion grows far faster than the vocabulary; that is the number the swap triggers watch, not the concept count.
 - **Two backends means SPARQL dialect-drift risk.** Mitigated by running the *same* suite against both in CI and keeping every query in template files rather than inline strings. The Neptune path will still be less exercised than the default: an honest asymmetry, bounded by that shared suite.
 

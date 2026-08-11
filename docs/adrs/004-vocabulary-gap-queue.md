@@ -37,7 +37,7 @@ The chat path deserves a note: the miss is recorded by **deterministic resolver 
 
 Per entry, computed in code with no model involvement:
 
-- **Normalise** the surface form and merge across sources.
+- **Normalise** the surface form and merge across sources. The merge key is *not* the resolver's normalisation. The resolver's `normalise()` defines label identity for the published index ([ADR-005](005-governance-and-downstream-orchestration.md)), and it deliberately does no stemming, so `gas bottle` and `gas bottles` are two distinct labels to it. The queue wants them to be one entry. Teaching the resolver to stem in order to get that would change what "two labels collide" means and break the parity guarantee the integrity gate depends on, so the gap key is a separate function: the resolver's normalisation plus a plural fold, used for merging queue entries and never for resolving a mention.
 - **Count** occurrences per source. Three chat turns and nine document mentions are one entry with two counts, not two entries.
 - **Collect** verbatim evidence, capped and deduplicated, always with its locator.
 - **Compute a suggested attachment point**: the nearest existing concepts by lexical distance and label embedding, returned as a ranked shortlist with scores.
@@ -90,7 +90,7 @@ Actioning an entry opens the review card in the console with the evidence pinned
 
 - **The queue needs a worker.** An unworked queue is worse than none: it accumulates, its signal decays, and its existence implies a diligence that is not happening. This is the platform's real operating cost and it is organisational.
 - **Suppression can hide a real gap.** A dismissal made in haste buries a term until its volume jumps. The escape hatch is deliberate but coarse.
-- **Normalisation merges too aggressively at the margins.** Surface forms differing only in punctuation or plurality become one entry, which is usually right and occasionally conflates two distinct terms.
+- **The merge key is deliberately looser than the resolver's.** Surface forms differing only in punctuation or plurality become one queue entry, which is usually right and occasionally conflates two distinct terms. It also means the queue's notion of "the same term" and the resolver's are not identical by design, and anyone reading either has to know which one they are looking at.
 - **The shortlist can anchor the expert.** Showing *"closest term: CO₂ Cylinder"* makes accepting that attachment easier than considering a new concept. Mitigated by always offering "none of these" as a first-class option in the console rather than a fallback.
 - **Chat gaps are noisier than the other two.** Users type typos, jokes, and unrelated questions. Frequency thresholds filter most of it, at the cost of delaying genuinely new terms until they recur.
 

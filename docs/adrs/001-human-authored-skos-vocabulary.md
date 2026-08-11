@@ -91,7 +91,7 @@ agent = Agent(
 
 ### What we do NOT do
 
-- **No LLM-authored SPARQL.** Tools execute parameterized templates from `packages/h2o_core/sparql/`. A free-form `execute_sparql` tool reintroduces unbounded interpretation over structure and makes answers unreproducible.
+- **No LLM-authored SPARQL.** Tools execute parameterized templates from `packages/h2o_core/src/h2o_core/sparql/` (inside the package, so the built wheel carries them). A free-form `execute_sparql` tool reintroduces unbounded interpretation over structure and makes answers unreproducible. Parameters bind **RDF terms only**: a different query shape is a different template file, never a placeholder in a clause position.
 - **No graph writes from the chat agent, at all.** Its IAM role carries no write access to the graph store: read-only on the S3 dataset prefix today, no Neptune write actions after a swap. Writes happen in ingestion and in publish, never inside a conversation. This is enforced by IAM, not by prompt.
 - **No model-authored vocabulary.** The model never writes a `prefLabel`, never writes a `definition`, never mints an IRI, never selects a parent outside the existing tree ([ADR-004](004-vocabulary-gap-queue.md)).
 - **No OWL/RDFS reasoning, and no SHACL `sh:rule` inference.** SHACL *validation* is the integrity gate; what is excluded is anything that derives a triple no human authored.
