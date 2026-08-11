@@ -144,6 +144,87 @@ def _promote(
     return len(claims), touched
 
 
+def _restate(
+    store_: pyoxigraph.Store, claim: Any, surface: str, concept_id: str | None, score: float
+) -> None:
+    """Set one claim's resolution to what the vocabulary now says, either way.
+
+    Clears the whole resolution first rather than patching it, because the
+    interesting case is a claim moving *back* to held: patching would leave the
+    old subject triple behind and the graph would assert a link the vocabulary
+    no longer supports.
+    """
+    facts_graph = pyoxigraph.NamedNode(config.FACTS_GRAPH)
+    for predicate in ("status", "subject", "heldSurface", "resolvedBy", "resolutionScore"):
+        for quad in list(store_.quads_for_pattern(claim, _node(predicate), None, facts_graph)):
+            store_.remove(quad)
+
+    resolved = concept_id is not None
+    store_.add(
+        pyoxigraph.Quad(
+            claim, _node("status"), _node("active" if resolved else "held"), facts_graph
+        )
+    )
+    store_.add(
+        pyoxigraph.Quad(
+            claim,
+            _node("resolvedBy"),
+            _node(f"stage/{'exact' if resolved else 'abstain'}"),
+            facts_graph,
+        )
+    )
+    store_.add(
+        pyoxigraph.Quad(
+            claim,
+            _node("resolutionScore"),
+            pyoxigraph.Literal(
+                str(score),
+                datatype=pyoxigraph.NamedNode("http://www.w3.org/2001/XMLSchema#decimal"),
+            ),
+            facts_graph,
+        )
+    )
+    if resolved:
+        store_.add(pyoxigraph.Quad(claim, _node("subject"), _node(str(concept_id)), facts_graph))
+    else:
+        store_.add(
+            pyoxigraph.Quad(
+                claim, _node("heldSurface"), pyoxigraph.Literal(gaps.gap_key(surface)), facts_graph
+            )
+        )
+
+
+def restate_claims(store_: pyoxigraph.Store, index: resolver.ResolverIndex) -> dict[str, int]:
+    """Recompute every claim's resolution from the vocabulary as it now stands.
+
+    Deliberately not part of the fan-out. A publish only ever *adds* resolution,
+    so step 2 promotes and never demotes -- and that asymmetry is correct, since
+    publishing a label cannot invalidate an existing link.
+
+    This is the reverse operation, and it exists for `make demo-reset`, which
+    takes labels away. A claim that resolved through a label the vocabulary no
+    longer carries has to go back to held, or the reset would leave the graph
+    asserting links that nothing supports and the demo would not actually be
+    repeatable.
+    """
+    facts_graph = pyoxigraph.NamedNode(config.FACTS_GRAPH)
+    surfaces = {
+        quad.subject: str(quad.object.value)
+        for quad in store_.quads_for_pattern(None, _node("subjectSurface"), None, facts_graph)
+        if isinstance(quad.object, pyoxigraph.Literal)
+    }
+
+    active = held = 0
+    for claim, surface in surfaces.items():
+        verdict = resolve.resolve(surface, index=index)
+        _restate(store_, claim, surface, verdict.concept_id, verdict.score)
+        if verdict.concept_id:
+            active += 1
+        else:
+            held += 1
+    return {"claims": len(surfaces), "active": active, "held": held}
+
+
 def reresolve_backlog(event: dict[str, Any] | None = None) -> dict[str, Any]:
     """Replay every held mention against the vocabulary as it now stands.
 

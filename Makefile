@@ -12,7 +12,7 @@ CFN      = infra/cloudformation
 
 .PHONY: help install lock lint format typecheck test check check-vocab check-corpus cfn-lint \
         deploy-data-plane deploy-graph deploy-data deploy-telemetry deploy-orchestration \
-        deploy-frontend outputs seed-graph seed-docs ingest gaps dev-api api-reqs sam-build \
+        deploy-frontend outputs seed-graph seed-docs ingest gaps demo-reset dev-api api-reqs sam-build \
         deploy-api clean
 
 help:  ## Show this help
@@ -97,6 +97,9 @@ deploy-api: sam-build  ## 40: build and deploy the vocabulary API
 
 ingest:  ## Start an ingest run against the deployed API and poll it to completion
 	H2O_ENV=$(ENV) AWS_REGION=$(REGION) uv run python scripts/api.py POST /ingest --wait
+
+demo-reset:  ## Put the demo back to its starting state (the loop is one-shot otherwise)
+	H2O_ENV=$(ENV) AWS_REGION=$(REGION) uv run python scripts/demo_reset.py
 
 gaps:  ## Show the open gap queue, ordered by occurrences
 	H2O_ENV=$(ENV) AWS_REGION=$(REGION) uv run python scripts/api.py GET /gaps

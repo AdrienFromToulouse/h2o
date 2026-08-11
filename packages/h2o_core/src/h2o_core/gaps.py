@@ -41,6 +41,7 @@ __all__ = [
     "list_gaps",
     "read_gap",
     "record_miss",
+    "reopen",
     "should_resurface",
 ]
 
@@ -328,6 +329,23 @@ def close(gap_id: str, *, concept_id: str, run_id: str = "", table_resource: Any
                 ":now": _now(),
             }
         ),
+    )
+
+
+def reopen(gap_id: str, *, table_resource: Any = None) -> None:
+    """Put an actioned entry back in the queue.
+
+    Only `make demo-reset` calls this. It is not a curation action: nothing in
+    the console can un-close a gap, because closing happens as a consequence of
+    a publish and reversing it would mean reversing the publish. The reset
+    reverses the publish, so it is entitled to reverse this too.
+    """
+    target = table_resource or store.gaps_table()
+    target.update_item(
+        Key={"gap_id": gap_id},
+        UpdateExpression=("SET #status = :open REMOVE closed_by_run_id, resolved_to, closed_at"),
+        ExpressionAttributeNames={"#status": "status"},
+        ExpressionAttributeValues={":open": GapStatus.open.value},
     )
 
 
