@@ -32,6 +32,8 @@ A document registry row in DynamoDB records `filename`, `doc_type`, `doc_version
 Normalisation exists for embedding quality only. **The stored `snippet` is the original text**, so citations remain verbatim. Two rules carry forward because both were learned the hard way:
 
 - **HTML is cited against its de-marked-up text.** A reader of `<div class="price">&pound;7.99</div>` sees `£7.99`, and that is what any extractor quotes, so a byte comparison against the raw markup rejects a *correct* quotation as a fabrication and silently drops the fact. HTML documents are extracted from, chunked from, and cited against the flattened text, with `line_range` mapped back to the original file. This is safe precisely because the transform is **lossless**: it introduces no character the document did not contain.
+
+  **An HTML comment is not the document.** De-markup drops comments *before* it drops tags, because a comment is authoring scaffolding — a note to the next editor, a stale price, a block someone commented out rather than deleted — and it is not text the document says. Leaving comments in the citable text would let a model quote one and have the verbatim gate certify it as genuine source material: the gate would be doing exactly its job and still passing a fabrication, which is the worst shape a check can take. Comments are replaced by their own newlines rather than removed, so `line_range` still points where a human would look.
 - **OCR repairs are never cited.** Rewriting `ug`→`µg` or `Vitam1n`→`Vitamin` improves embedding quality, but citing repaired text would claim a datasheet printed a unit it never printed. Repairs stay embedding-only; those snippets remain byte-exact.
 
 Chunks are section-aware (~300–500 tokens, split on headings). Vector metadata carries `source_file`, `doc_type`, `doc_version`, and the resolved `concept` as filterable keys, with `snippet` and `line_range` as payload.
@@ -46,6 +48,8 @@ Nova 2 Lite, forced tool call against a strict schema, one row per fact:
 ```
 
 The **verbatim-snippet gate** is mandatory: `snippet` must be an exact substring of the source text (per the HTML rule above). **Reject, do not repair.** A row that fails the check is persisted as a `Rejection` record with the offending text, not silently dropped and not "fixed" into passing. A fact the model knows but cannot evidence is a rejection, by design.
+
+**The unit of extraction is a passage, never a line.** The model is given a whole chunk, and a mention that a hard wrap splits across two lines — `the gas\nbottle yourself` in the support FAQ — is one mention, because that is what a reader sees. This sounds like an implementation detail and is not: a line-oriented reader finds eleven mentions of `gas bottle` in the corpus where a passage-oriented one finds twelve, and the missing twelfth is a held claim that never gets recovered when the vocabulary later gains the term. The verbatim gate does not protect against this, because the eleven it does see all quote correctly. Only the reading unit does.
 
 ### 4. Resolve mentions against the published vocabulary
 
