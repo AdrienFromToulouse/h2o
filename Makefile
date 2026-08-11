@@ -12,7 +12,8 @@ CFN      = infra/cloudformation
 
 .PHONY: help install lock lint format typecheck test check check-vocab check-corpus cfn-lint \
         deploy-data-plane deploy-graph deploy-data deploy-telemetry deploy-orchestration \
-        deploy-frontend outputs seed-graph seed-docs ingest gaps demo-reset dev-api api-reqs sam-build \
+        deploy-frontend outputs seed-graph seed-docs ingest gaps demo-reset dev-api dev-web \
+        web-install web-check api-reqs sam-build \
         deploy-api clean
 
 help:  ## Show this help
@@ -69,6 +70,19 @@ seed-docs: check-corpus  ## Upload data/docs/ (documents + registry.json) to the
 # --------------------------------------------------------------- local serving
 # These call real AWS. `check` is the only offline target.
 
+dev-web:  ## Serve the console on :3000 (needs apps/frontend/.env.local)
+	cd apps/frontend && pnpm install --silent && pnpm dev
+
+web-install:  ## Install the console's dependencies
+	cd apps/frontend && pnpm install
+
+# Part of `check`, and offline: it renders the real components against fixtures
+# and asserts ADR-006's no-jargon rule, which is the one claim that ADR makes
+# about testability.
+web-check:  ## Typecheck and test the console
+	@test -d apps/frontend/node_modules || (cd apps/frontend && pnpm install --silent)
+	cd apps/frontend && pnpm exec tsc --noEmit && pnpm exec vitest run
+
 dev-api:  ## Serve the vocabulary API on :8085 (real S3, DynamoDB, Bedrock)
 	cd apps/api && H2O_ENV=$(ENV) AWS_REGION=$(REGION) \
 		uv run uvicorn h2o_api.app:app --reload --port 8085
@@ -107,7 +121,7 @@ gaps:  ## Show the open gap queue, ordered by occurrences
 clean:  ## Remove build artefacts
 	rm -rf $(CFN)/.aws-sam apps/api/vendor apps/api/requirements.txt .pytest_cache
 
-check: lint typecheck test check-vocab check-corpus cfn-lint  ## Everything CI runs. Fully offline.
+check: lint typecheck test check-vocab check-corpus cfn-lint web-check  ## Everything CI runs. Fully offline.
 
 # ----------------------------------------------------------------- deployment
 #
