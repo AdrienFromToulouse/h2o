@@ -26,9 +26,9 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+from h2o_core import config, graph, integrity
 from h2o_core.normalize import normalise
-from pyshacl import validate
-from rdflib import Graph, Namespace, URIRef
+from rdflib import Namespace, URIRef
 from rdflib.namespace import RDF, SKOS
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -53,21 +53,24 @@ def short(iri: URIRef | str) -> str:
 
 # ---------------------------------------------------------------- load
 
-data = Graph()
 ttl_files = sorted(VOCAB.glob("*.ttl"))
 if not ttl_files:
     print("no Turtle files found in vocab/", file=sys.stderr)
     sys.exit(1)
 
-for path in ttl_files:
-    try:
-        data.parse(path, format="turtle")
-    except Exception as exc:  # noqa: BLE001 - report and keep going
-        fail("parse", f"{path.name}: {exc}")
-
-if failures:
-    print("\n".join(failures), file=sys.stderr)
+# Loaded into the same store the publish path loads, then converted through the
+# same function the gate uses. One parse, one copy: a second reading of the same
+# Turtle is a second chance for this script and the API to disagree about what
+# the vocabulary says.
+try:
+    store = graph.store_from_turtle(
+        {path.name: path.read_bytes() for path in ttl_files}, config.PUBLISHED_GRAPH
+    )
+except Exception as exc:  # noqa: BLE001 - the file it names is the whole message
+    print(f"parse: {exc}", file=sys.stderr)
     sys.exit(1)
+
+data = integrity.as_rdflib(store)
 
 concepts = set(data.subjects(predicate=RDF.type, object=SKOS.Concept))
 notes.append(f"parsed {len(ttl_files)} Turtle files, {len(data)} triples, {len(concepts)} concepts")
@@ -79,70 +82,33 @@ for c in concepts:
         scheme_of[c] = schemes[0]
 
 
-# -------------------------------------------------- 1. the SHACL integrity gate
+# --------------------------- 1 and 2. the gate, exactly as a publish runs it
 
-shapes = Graph().parse(SHAPES, format="turtle")
+# Imported, never reimplemented. ADR-005: "Git and the console are equally safe.
+# Both paths run the same gate, so a bulk Turtle edit cannot bypass validation
+# that a UI edit enforces." That sentence is only true if this line calls the
+# same function the publish route calls -- a second copy here would be a second
+# gate, and two gates drift in exactly one direction.
+findings = integrity.validate(store)
+blocking = integrity.blocking(findings)
 
-# advanced=False keeps SHACL Advanced Features off: `sh:rule` would derive
-# triples, and nothing in this system may assert a fact no human authored.
-# allow_warnings makes sh:Warning results non-blocking, per ADR-005 check 6.
-conforms, report_graph, report_text = validate(
-    data,
-    shacl_graph=shapes,
-    advanced=False,
-    inference="none",
-    allow_warnings=True,
-    abort_on_first=False,
-)
+for finding in blocking:
+    fail(
+        "gate",
+        f"{finding.concept_id}: {finding.message}" if finding.concept_id else finding.message,
+    )
+if not blocking:
+    notes.append(f"OK  integrity gate: no violations across {len(concepts)} concepts")
 
-SHACL_NS = Namespace("http://www.w3.org/ns/shacl#")
-violations, warnings = [], []
-for result in report_graph.subjects(RDF.type, SHACL_NS.ValidationResult):
-    severity = report_graph.value(result, SHACL_NS.resultSeverity)
-    focus = report_graph.value(result, SHACL_NS.focusNode)
-    message = report_graph.value(result, SHACL_NS.resultMessage)
-    line = f"{short(focus)}: {message}"
-    (violations if severity == SHACL_NS.Violation else warnings).append(line)
-
-if violations:
-    for v in sorted(violations):
-        fail("shacl", v)
-else:
-    notes.append(f"OK  SHACL gate: no violations across {len(concepts)} concepts")
-
-if warnings:
-    by_message: dict[str, int] = defaultdict(int)
-    for w in warnings:
-        by_message[w.split(": ", 1)[1]] += 1
-    for msg, count in sorted(by_message.items()):
-        notes.append(f"WARN {count}x {msg}")
-if not conforms and not violations and not warnings:
-    fail("shacl", f"non-conforming with no parsed results:\n{report_text}")
-
-
-# ------------------------- 2. resolver parity: the check SHACL cannot perform
-
-seen: dict[tuple[URIRef, str], set[str]] = defaultdict(set)
-for c in concepts:
-    scheme = scheme_of.get(c)
-    if scheme is None:
-        continue
-    for pred in (SKOS.prefLabel, SKOS.altLabel, SKOS.hiddenLabel):
-        for lit in data.objects(c, pred):
-            seen[(scheme, normalise(str(lit)))].add(short(c))
-
-collisions = [
-    f"in {short(scheme)}, '{label}' is claimed by {sorted(owners)}"
-    for (scheme, label), owners in sorted(seen.items())
-    if len(owners) > 1
-]
-for c in collisions:
-    fail("resolver-parity", c)
-if not collisions:
-    notes.append(f"OK  resolver parity: {len(seen)} normalised labels, all unique per scheme")
+warned: dict[str, int] = defaultdict(int)
+for finding in findings:
+    if not finding.blocks:
+        warned[finding.message] += 1
+for message, count in sorted(warned.items()):
+    notes.append(f"WARN {count}x {message}")
 
 # Guard the guard: prove the normaliser still folds the case SPARQL misses, so
-# a future "simplification" of normalise() cannot silently weaken this check.
+# a future "simplification" of normalise() cannot silently weaken parity.
 if normalise("CO₂ Cylinder") != normalise("CO2 Cylinder"):
     fail("resolver-parity", "normalise() no longer folds 'CO₂' to 'CO2'; SHACL cannot cover this")
 

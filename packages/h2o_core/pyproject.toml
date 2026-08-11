@@ -24,3 +24,12 @@ dependencies = [
 # the first query (ADR-001).
 [tool.hatch.build.targets.wheel]
 packages = ["src/h2o_core"]
+
+# The SHACL shapes are the integrity gate, and ADR-005 keeps them in vocab/ so
+# they are reviewed in git exactly like the vocabulary they constrain. The
+# Lambda still needs them at runtime, so the file is force-included into the
+# wheel rather than copied into src/ -- one reviewed original, one packaged
+# artefact. A second copy would be a second thing to keep in step, which is the
+# mistake normalise() already taught this repo once.
+[tool.hatch.build.targets.wheel.force-include]
+"../../vocab/shapes/skos-integrity.ttl" = "h2o_core/shapes/skos-integrity.ttl"
