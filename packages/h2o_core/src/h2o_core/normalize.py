@@ -12,7 +12,7 @@ import html
 import re
 import unicodedata
 
-__all__ = ["flatten_html", "normalise", "readable"]
+__all__ = ["blank_comments", "flatten_html", "normalise", "readable"]
 
 _NON_ALPHANUMERIC = re.compile(r"[^a-z0-9]+")
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -62,6 +62,22 @@ def flatten_html(markup: str) -> str:
     without_comments = _HTML_COMMENT.sub("", markup)
     without_tags = _HTML_TAG.sub("", without_comments)
     return html.unescape(without_tags)
+
+
+def blank_comments(markup: str) -> str:
+    """Replace HTML comments with their own newlines, keeping every line number.
+
+    A comment spans lines, so it has to be removed from the whole document at
+    once -- a per-line pass never sees one. But removing it outright would shift
+    every following line number, and `line_range` is half of what makes a
+    citation checkable, so each comment leaves its newlines behind.
+
+    This matters more than it sounds: the spec sheet in this corpus carries a
+    comment explaining the de-markup rule and quoting the very price the rule is
+    about. Leave comments in and a note *about* the document becomes citable
+    *as* the document.
+    """
+    return _HTML_COMMENT.sub(lambda m: "\n" * m.group(0).count("\n"), markup)
 
 
 def readable(text: str, *, is_html: bool) -> str:
