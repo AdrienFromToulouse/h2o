@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +29,6 @@ export default function Home() {
   return (
     <div className="space-y-10">
       <div className="flex flex-col items-center gap-4 text-center">
-        <Image src="/aquaknow.png" alt="AquaKnow" width={140} height={140} priority />
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">AquaKnow</h1>
           <p className="mt-1 text-sm uppercase tracking-[0.2em] text-muted">
