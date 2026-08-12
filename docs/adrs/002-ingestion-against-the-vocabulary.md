@@ -66,6 +66,30 @@ Every resolution records which cascade stage matched and at what score, so any c
 
 Instance identifiers such as machine serials and site IDs resolve by **exact match only**. No fuzzy instance linking: a wrong concept link mislabels one claim, whereas a wrong instance link tells the wrong customer their filter is due.
 
+#### Amendment, M5: one model call before the cascade, at query time only
+
+*The cascade above is unchanged for ingestion. This amends what happens when the caller is a person typing a question.*
+
+Stages 1 and 2 are a dictionary, so they are exact by construction: `installtion` is not `installation` and never will be. Stage 3 cannot rescue it either — a character-level typo shreds subword tokenisation, and the measurements in `retrieval._worth_reporting` already record that similarity on this vocabulary points the wrong way. The deployed console therefore answered a one-keystroke typo with an honest refusal about a term the documents use on every page, and had no route at all for a question asked in another language. Edit distance would fix the first and is structurally incapable of the second: `bouteille de gaz` is not a misspelling of anything.
+
+So the read path may call a model **before** resolution, subject to four constraints. Each is enforced by code or by a test, not by intention.
+
+**It is blind to the vocabulary.** Its prompt contains the question and nothing else — no labels, no shortlist, no concept ids. This is the whole safety argument and it is not a matter of degree. `installtion` is a *misspelling* of `Installation`; `gas bottle` is a *synonym* of `CO₂ Cylinder`, semantically correct, and precisely the altLabel [ADR-004](004-vocabulary-gap-queue.md) requires a human to author and the model only to report. A model shown both will map the second and be right to, and the gap entry this platform's central claim rests on disappears. A model shown only the question cannot: `gas bottle` is correctly-spelled English and passes through untouched. `sanitise.aliases()` accordingly takes a question and a client, and there is no parameter through which an index could arrive — the same unrepresentable-otherwise move as `resolve_instance` above. A test asserts no label from the shipped vocabulary appears anywhere in the request, and it first failed on the prompt's own worked example.
+
+**It returns an alias map, never a rewritten question.** Only the lookup key changes; the surface form is carried through untouched. It is load-bearing three ways: it is the left-hand side of the chip, and "installation → Installation" tells a reader nothing; it is what a gap entry quotes back to a curator as evidence; and it is what the queue merges on.
+
+**It may change how a term is spelled or what language it is in. It may not change what it refers to.** No expanded abbreviations, no colloquial-to-technical substitution, no singular/plural, nothing requiring knowledge of the subject matter.
+
+**It runs only on the miss path.** A question whose every phrase resolved never pays for it. A question in another language resolves nothing and always does, which is the case it exists for.
+
+**What this actually does, measured against Nova 2 Lite rather than hoped for.** Typo correction is reliable. A single foreign word becoming an English term is reliable, including one word becoming two (`koolstoffilter` → `carbon filter`). A **multi-word foreign term is not**: across five prompt formulations it came back word by word (`bouteille` → `bottle`, `gaz` → `gas`, which never compose into a phrase the resolver looks up), or as the whole question in one entry, or with a substituted English term rather than a translated one — `bouteille de gaz` → `gas cylinder`, which is the synonym move this design exists to refuse. One formulation held, by naming that exact pair in the prompt, which is a model echoing an example rather than following an instruction and which put a subject-matter term into a prompt that must hold none.
+
+So the honest scope is **typos and single-word foreign terms**. A multi-word foreign term files an imprecise queue entry, or several; it cannot resolve wrongly, because `retrieval._prune_aliases` refuses any multi-word alias that would make a term resolve. That asymmetry is the second of two vocabulary-side guards and it is bought with the `gas cylinder` observation: a single-word original leaves no room for phrase-level reinterpretation, and the multilingual case never needed a resolution in the first place — what it needs is the *miss* filed under the English form. `scripts/check_sanitiser.py` asks a live model all of this and gates on the seeded gaps.
+
+Ingestion passes no alias map and keeps the four stages above, deliberately. The stage a resolution records lands in the facts graph as `h2o:resolvedBy`, and a claim asserting it matched exactly when a model corrected the spelling first would be false in the graph. It is also the rule stated in step 3: **reject, do not repair**. A document that spells a term wrong is a curator's `skos:hiddenLabel` decision — the seed vocabulary now carries some — not something the pipeline patches on the way past.
+
+One consequence for [ADR-004](004-vocabulary-gap-queue.md)'s merge key, taken deliberately: when an alias translated a term, the queue entry merges and displays on the English form, and the words actually typed become its variant. `bouteille de gaz` and `gas bottle` are one gap in an English vocabulary, and two entries would split the count the console orders by. The evidence text stays the verbatim question either way.
+
 ### 5. Detect contradictions, deterministically and with no model
 
 Group claims by `(subject, predicate)`, normalise units before comparing, and flag any group whose values disagree.

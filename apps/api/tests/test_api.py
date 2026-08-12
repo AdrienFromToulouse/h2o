@@ -9,7 +9,7 @@ def test_health_reports_the_dataset_it_loaded(client: TestClient) -> None:
 
     assert body["status"] == "ok"
     assert body["graph_backend"] == "oxigraph"
-    assert body["quads"] == 864
+    assert body["quads"] == 870
     assert body["dataset_digest"]
 
 

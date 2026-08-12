@@ -37,7 +37,7 @@ from typing import Any
 import pyoxigraph
 from pydantic import BaseModel, Field
 
-from h2o_core import config, facts, gaps, resolve, vectors, vocabulary
+from h2o_core import config, facts, gaps, resolve, sanitise, vectors, vocabulary
 from h2o_core.gaps import GapEvidence, GapSource, GapType
 from h2o_core.normalize import normalise
 from h2o_core.resolve import Stage
@@ -154,6 +154,7 @@ def candidate_terms(
     *,
     index: ResolverIndex | None,
     embed: Callable[[str], list[float]] | None = None,
+    aliases: dict[str, str] | None = None,
 ) -> list[resolve.Resolution]:
     """Every phrase in the question the cascade had a verdict about.
 
@@ -171,6 +172,12 @@ def candidate_terms(
     Returns the cascade's own verdicts rather than a decision about them, for
     the same reason ``resolve.resolve`` is pure: a curator's search box wants
     the verdict without the queue write.
+
+    ``aliases`` is threaded to both passes and changes only what the dictionary
+    is asked for. It matters most in pass 1: "installtion process" is close to
+    nothing, but the sweep then tries "installtion" alone, the alias makes it
+    exact, and the word is consumed -- so the leftover never reaches pass 2 and
+    never costs a Titan call.
     """
     if index is None:
         return []
@@ -186,7 +193,7 @@ def candidate_terms(
     while position < len(words):
         for length in range(min(config.MAX_TERM_WORDS, len(words) - position), 0, -1):
             phrase = " ".join(words[position : position + length])
-            verdict = resolve.resolve(phrase, index=index)
+            verdict = resolve.resolve(phrase, index=index, aliases=aliases)
             if verdict.stage is Stage.exact:
                 verdicts.append(verdict)
                 for offset in range(length):
@@ -202,7 +209,15 @@ def candidate_terms(
     # Pass 2: what is left, longest first, capped. Longest first is both the
     # useful order -- a longer phrase is a more specific term -- and the order
     # that makes the cap drop the least informative candidates.
-    candidates: list[tuple[int, int, str]] = []
+    #
+    # An aliased span goes ahead of all of them, because length is a guess about
+    # where a term ends and an alias is evidence. This is the third form of the
+    # straddling bug: "quelle est la pression de la bouteille de gaz" offered
+    # "pression de la bouteille" first -- four words, content at both edges, so
+    # nothing above rejects it -- consumed the middle of the question and left
+    # "gaz" on its own. The sanitiser had already named "bouteille de gaz" as one
+    # term; the sweep just was not listening.
+    candidates: list[tuple[int, int, int, str]] = []
     for length in range(config.MAX_TERM_WORDS, 0, -1):
         for start in range(len(words) - length + 1):
             span = range(start, start + length)
@@ -219,17 +234,21 @@ def candidate_terms(
             if any(edge in _FUNCTION_WORDS for edge in edges):
                 continue
             phrase = " ".join(words[start : start + length])
-            if normalise(phrase):
-                candidates.append((start, length, phrase))
+            normalised = normalise(phrase)
+            if normalised:
+                rank = 0 if normalised in (aliases or {}) else 1
+                candidates.append((rank, start, length, phrase))
+
+    candidates.sort(key=lambda c: (c[0], -c[2], c[1]))
 
     seen = 0
-    for start, length, phrase in candidates:
+    for _rank, start, length, phrase in candidates:
         if seen >= config.MAX_CANDIDATE_TERMS:
             break
         if any(consumed[i] for i in range(start, start + length)):
             continue
         seen += 1
-        verdict = resolve.resolve(phrase, index=index, embed=embed)
+        verdict = resolve.resolve(phrase, index=index, embed=embed, aliases=aliases)
         # A phrase is consumed when the cascade matched it, and also when it
         # came close enough to be worth reporting as a gap. Without the second
         # case "the gas bottle", "gas bottle" and "gas" would each open an
@@ -247,7 +266,7 @@ def candidate_terms(
 #: question about equipment is built from. A gap entry is a *thing the documents
 #: should have a word for*, so an action is not a candidate even when it scores
 #: well -- "check" is a question about Inspection, not a missing term.
-_FUNCTION_WORDS = frozenset(
+_FUNCTION_WORDS_EN = frozenset(
     """
     a an the this that these those my our your its it they them he she we i you
     is are was were be been being am do does did done doing have has had having
@@ -263,13 +282,77 @@ _FUNCTION_WORDS = frozenset(
     """.split()
 )
 
+#: The same job in the languages a question actually arrives in. English-only was
+#: not a choice so much as an oversight, and the read path's own test found it:
+#: "quelle est la pression de la bouteille de gaz" offered "quelle est la
+#: pression" as a candidate, because to an English list those are four content
+#: words. That is the "I check the gas" bug again in another language, and it
+#: reaches a curator as a queue row made of somebody's grammar.
+#:
+#: Deliberately not exhaustive and not a language detector. These are the closed
+#: classes -- articles, pronouns, auxiliaries, prepositions, interrogatives -- of
+#: the languages the vocabulary carries labels in plus the ones the sanitiser is
+#: most often asked to translate from. A word missing here costs one noisy queue
+#: row, which is the failure mode worth having.
+_FUNCTION_WORDS_OTHER = frozenset(
+    """
+    le la les un une des du de d au aux ce cet cette ces mon ma mes votre vos
+    est sont etait je tu il elle nous vous ils elles qui que quoi quel
+    quelle quels quelles comment pourquoi quand ou dois faire fait
+    dans sur sous avec sans pour par entre apres avant plus moins tres
+    de het een deze dit die dat mijn uw zijn haar ik jij hij zij wij
+    is zijn was waren heb heeft hebben kan kunnen moet moeten zal zullen
+    hoe wat waar waarom wanneer welke wie doe doen maak maken
+    in op aan van voor met zonder naar bij over onder tussen na
+    der die das ein eine einen dem den des ich du er sie wir ihr
+    ist sind war waren habe hat haben kann koennen muss muessen wird werden
+    wie was wo warum wann welche wer mache machen
+    im auf an von fuer mit ohne nach bei ueber unter zwischen
+    el los las uno una unos unas mi mis su sus este esta estos estas
+    es son era eran tengo tiene tienen puedo pueden debe deben
+    como que donde por cuando cual quien hago hacer
+    en sobre bajo con sin para entre despues antes
+    """.split()
+)
+
+#: What the two rules below actually consult. Kept as a union rather than as one
+#: list because the English half is argued for word by word above and the rest is
+#: closed-class grammar; merging them would lose which is which.
+_FUNCTION_WORDS = _FUNCTION_WORDS_EN | _FUNCTION_WORDS_OTHER
+
+#: Nouns that name no thing in particular. `_FUNCTION_WORDS` covers the verbs a
+#: question is built from but not these, so "what is the installation process"
+#: resolved "installation" in pass 1, consumed it, and queued the stranded
+#: "process" as a term a curator was invited to add a label for. Kept separate
+#: from the function words because these are only ever judged as a whole phrase:
+#: a generic noun *inside* a term is fine, and "point of use" would not survive
+#: being trimmed the way `content_phrase` trims the edges.
+#:
+#: Safe to list a word the vocabulary uses. Exact match runs first, so "part"
+#: resolves to Component in pass 1 and never reaches this.
+_GENERIC_NOUNS = frozenset(
+    """
+    process processes procedure procedures method methods
+    thing things stuff item items way ways
+    system systems information info data
+    detail details step steps question questions
+    """.split()
+)
+
 
 def content_phrase(phrase: str) -> str:
     """The phrase with its function words trimmed from both ends.
 
     "how do I check the gas bottle" becomes "gas bottle". Trimming rather than
-    filtering, because a function word *inside* a term is part of it: "point of
-    use" is a real term and "rate of flow" is a plausible one.
+    filtering, because a function word *inside* a term is part of it: "rate of
+    flow" survives whole, where filtering would leave "rate flow".
+
+    The edges are still absolute, and "point of use" is the case that shows it:
+    `use` is a listed generic verb, so the phrase trims to "point". A term whose
+    last word is a function word cannot be reported through here. That is a real
+    limit rather than a bug -- it is the same rule that stops "I check the gas"
+    becoming a queue row -- and it costs nothing today because such a term
+    resolves at the exact stage, which runs first and never reaches this.
     """
     words = [word for word in normalise(phrase).split() if word]
     while words and words[0] in _FUNCTION_WORDS:
@@ -310,7 +393,21 @@ def _worth_reporting(verdict: resolve.Resolution) -> bool:
     """
     if verdict.matched:
         return False
-    if not content_phrase(verdict.surface_form):
+    # The *corrected* form, when there is one. Found live: "how often do I replce
+    # the carbon filtre" queued an entry for `replce`. The sanitiser had already
+    # said it meant "replace", which is a listed function word and exactly the
+    # kind of phrase this refuses -- but the check was reading the typed form,
+    # where the typo hid the function word from the list. Judging the words the
+    # lookup was actually made with is both simpler and right: a term is worth a
+    # curator's attention because of what it means, not how it was spelled.
+    trimmed = content_phrase(verdict.lookup or verdict.surface_form)
+    if not trimmed:
+        return False
+    # A phrase made only of generic words names nothing a label could be added
+    # for. "process" is the one the console showed, with Fault, Dispenser and
+    # Component offered as its closest terms -- three unrelated concepts, because
+    # the question the score answers is not the question the chip was asking.
+    if all(word in _FUNCTION_WORDS or word in _GENERIC_NOUNS for word in trimmed.split()):
         return False
     if not config.CHAT_GAP_FLOOR:
         return True
@@ -429,6 +526,7 @@ def retrieve(
     gaps_table: Any = None,
     vectors_client: Any = None,
     run_id: str | None = None,
+    sanitise_client: Any = None,
 ) -> Answer:
     """Answer material for one question. Reads the graph; writes only gaps.
 
@@ -438,11 +536,32 @@ def retrieve(
     a term the vocabulary has never heard of. Returning the unresolved phrases
     instead is the honest result, and it is also the useful one: those phrases
     are now in the queue.
+
+    **The second attempt.** A phrase that failed may have failed over spelling or
+    language rather than over meaning, so a miss buys one `sanitise` call and a
+    re-sweep. A question whose every phrase resolved never pays for it; a French
+    question resolves nothing and always does, which is the case it exists for.
+
+    Cost ceiling on the miss path: pass 2 runs twice, so up to
+    ``2 * MAX_CANDIDATE_TERMS`` Titan calls, plus one Nova call. The happy path
+    is unchanged.
     """
     answer = Answer(question=question)
 
     verdicts = candidate_terms(question, index=index, embed=embed_one)
 
+    # `not verdicts` is the important half and it is easy to leave out: a
+    # question where nothing at all was recognised produces no verdicts rather
+    # than unmatched ones, and that is the strongest case for a second attempt,
+    # not the absence of one. Without it a wholly mistyped or wholly non-English
+    # question was the one thing the sanitiser never ran on.
+    if index is not None and (not verdicts or any(not v.matched for v in verdicts)):
+        alias_map = _prune_aliases(sanitise.aliases(question, client=sanitise_client), index)
+        if alias_map:
+            verdicts = candidate_terms(question, index=index, embed=embed_one, aliases=alias_map)
+
+    # Gap writes happen here, after the second attempt and never before it, so a
+    # phrase the sanitiser rescues leaves no queue row behind.
     for verdict in verdicts:
         if verdict.matched and verdict.concept_id:
             answer.resolved.append(
@@ -496,6 +615,38 @@ def retrieve(
     return answer
 
 
+def _prune_aliases(alias_map: dict[str, str], index: ResolverIndex) -> dict[str, str]:
+    """The two checks that need the vocabulary, which `sanitise` deliberately cannot see.
+
+    **The original must not already be a label.** A word the index knows is not a
+    misspelling, whatever a model thinks, and correcting one can only take away a
+    term that was already resolving.
+
+    **A multi-word original may not be the thing that makes a term resolve.**
+    This one is narrow and it is bought with a measurement. Asked in French about
+    the gas bottle, Nova 2 Lite returned `bouteille de gaz -> gas cylinder`: the
+    right phrase, and a *substituted* English term rather than a translated one.
+    It happened to be harmless -- "gas cylinder" is not a label either, so the
+    question still missed -- but the same move landing on "CO2 cylinder" would
+    have resolved, and the gap entry this demonstrator turns on would be gone.
+
+    Single-word aliases are exempt, and the asymmetry is the point. "installtion"
+    and "koolstoffilter" are the cases that must resolve, and a one-word original
+    leaves no room for the phrase-level reinterpretation that was observed. A
+    multi-word alias loses nothing by being refused a resolution: what the
+    multilingual case actually needs is for the *miss* to be filed under the
+    English form, and a miss is exactly what this leaves intact.
+    """
+    kept: dict[str, str] = {}
+    for original, corrected in alias_map.items():
+        if index.exact(original):
+            continue
+        if " " in original and index.exact(corrected):
+            continue
+        kept[original] = corrected
+    return kept
+
+
 def _as_suggestion(candidate: Candidate) -> dict[str, Any]:
     return {
         "concept_id": candidate.concept_id,
@@ -534,6 +685,11 @@ def _record_chat_miss(
     Evidence answers "what did somebody actually say"; the count answers "how
     often", and conflating them would let one person asking repeatedly look like
     a term in wide use.
+
+    When a sanitiser alias applied, the entry merges on the English form and the
+    typed words become its variant. The evidence text stays the verbatim
+    question either way -- a curator judging whether a term is really used needs
+    to read what somebody actually asked, not a tidied version of it.
     """
     if not _worth_reporting(verdict):
         return None
@@ -551,5 +707,6 @@ def _record_chat_miss(
         gap_type=GapType.add_alt_label,
         suggestions=verdict.shortlist,
         run_id=run_id,
+        merge_as=verdict.lookup if verdict.aliased else None,
         table_resource=gaps_table,
     )

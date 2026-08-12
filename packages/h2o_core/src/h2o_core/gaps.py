@@ -204,9 +204,17 @@ def record_miss(
     suggestions: list[Candidate] | None = None,
     suggested_scheme: str | None = None,
     run_id: str | None = None,
+    merge_as: str | None = None,
     table_resource: Any = None,
 ) -> str:
     """Merge one miss into the queue and return its gap id.
+
+    `merge_as` is the form the entry keys and displays on, when that differs
+    from the words that produced it. Only the read path passes it, and only
+    after a sanitiser translated a term: "bouteille de gaz" and "gas bottle" are
+    one gap in an English vocabulary, and two entries would split the count the
+    console orders by. The typed words are not lost -- they are the variant,
+    which is what `variants` was for.
 
     An UpdateItem with ADD, never a PutItem. Ingestion and chat can write the
     same entry concurrently, and a read-modify-write would lose one of the two
@@ -228,7 +236,8 @@ def record_miss(
     concurrent writers still cannot lose a count.
     """
     target = table_resource or store.gaps_table()
-    key = gap_key(surface_form)
+    display = merge_as or surface_form
+    key = gap_key(display)
     now = _now()
 
     if not key:
@@ -237,7 +246,7 @@ def record_miss(
         # could add a label for. Said here as h2o's own invariant rather than
         # left to DynamoDB, whose refusal names an empty partition key and not
         # the reason there was nothing to key on.
-        raise ValueError(f"{surface_form!r} normalises to nothing, so it names no term")
+        raise ValueError(f"{display!r} normalises to nothing, so it names no term")
 
     ranked = [
         {
@@ -273,7 +282,7 @@ def record_miss(
             {
                 ":one": 1,
                 ":now": now,
-                ":surface": surface_form,
+                ":surface": display,
                 ":normalised": key,
                 ":gap_type": gap_type.value,
                 ":open": GapStatus.open.value,

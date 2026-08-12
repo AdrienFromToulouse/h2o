@@ -8,7 +8,7 @@ from h2o_core.graph import ConcurrentPublishError
 
 
 def test_the_seed_vocabulary_loads(store: pyoxigraph.Store) -> None:
-    assert len(store) == 864
+    assert len(store) == 870
 
 
 def test_the_dump_is_byte_reproducible() -> None:
@@ -30,7 +30,7 @@ def test_named_graphs_survive_the_round_trip(seeded_s3: FakeS3) -> None:
 
     graphs = {str(q.graph_name.value) for q in snapshot.store}
     assert graphs == {config.PUBLISHED_GRAPH}
-    assert len(snapshot.store) == 864
+    assert len(snapshot.store) == 870
     assert snapshot.etag is not None
 
 

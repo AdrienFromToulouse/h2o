@@ -199,6 +199,73 @@ def _split_top_level(clause: str) -> list[str]:
     return parts
 
 
+class FakeBedrock:
+    """Bedrock's Converse, refusing the way the real one is allowed to.
+
+    Nova 2 Lite does not always call a forced tool. It answers in prose instead,
+    and it does so *identically on a plain retry* because the callers here run at
+    temperature 0 -- which is why both `extraction` and `sanitise` retry by
+    moving the conversation forward rather than by resending. A fake that always
+    returned a well-formed tool call would make those retry paths untested code
+    that reads as if it worked.
+
+    So a reply may be a dict (a tool call), a string (prose, no tool call), or an
+    exception instance (a client failure). Replies are consumed in order and the
+    last one repeats, so a test asserting "prose first, then the tool" writes
+    exactly that.
+
+    Every request is kept whole. `sanitise` rests on the model never being shown
+    the vocabulary, and the only way to assert that is against the bytes actually
+    sent.
+    """
+
+    def __init__(self, *replies: Any, tool_name: str = "") -> None:
+        self.replies: list[Any] = list(replies) or [{}]
+        self.tool_name = tool_name
+        self.requests: list[dict[str, Any]] = []
+
+    @property
+    def calls(self) -> int:
+        return len(self.requests)
+
+    def converse(self, **kwargs: Any) -> dict[str, Any]:
+        self.requests.append(copy.deepcopy(kwargs))
+        reply = self.replies[min(len(self.requests) - 1, len(self.replies) - 1)]
+
+        if isinstance(reply, Exception):
+            raise reply
+        if isinstance(reply, str):
+            return {"output": {"message": {"content": [{"text": reply}]}}}
+
+        name = self.tool_name or _forced_tool_name(kwargs)
+        return {
+            "output": {"message": {"content": [{"toolUse": {"name": name, "input": dict(reply)}}]}}
+        }
+
+    def sent_text(self) -> str:
+        """Every string in every request, for asserting what a prompt did not say."""
+        found: list[str] = []
+
+        def walk(node: Any) -> None:
+            if isinstance(node, str):
+                found.append(node)
+            elif isinstance(node, dict):
+                for key, value in node.items():
+                    found.append(str(key))
+                    walk(value)
+            elif isinstance(node, list):
+                for value in node:
+                    walk(value)
+
+        walk(self.requests)
+        return "\n".join(found)
+
+
+def _forced_tool_name(kwargs: dict[str, Any]) -> str:
+    choice = (kwargs.get("toolConfig") or {}).get("toolChoice") or {}
+    return str((choice.get("tool") or {}).get("name") or "")
+
+
 def _clauses(expression: str) -> dict[str, str]:
     tokens = re.split(r"\b(SET|ADD|REMOVE|DELETE)\b", expression)
     return {tokens[i]: tokens[i + 1] for i in range(1, len(tokens) - 1, 2)}

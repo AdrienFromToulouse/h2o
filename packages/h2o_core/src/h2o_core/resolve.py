@@ -4,6 +4,12 @@ ADR-002 step 4, in four stages: normalise, exact match, embedding shortlist,
 abstain. Every resolution records which stage matched and at what score, so any
 concept link can be explained after the fact rather than taken on trust.
 
+At query time the caller may also supply an alias map from `sanitise`, which
+swaps the key the dictionary is asked for without touching the surface form.
+Ingestion does not, and its cascade is unchanged: the stage this records lands
+in the facts graph as `h2o:resolvedBy`, and a claim saying it matched exactly
+when a model corrected the spelling first would be false in the graph.
+
 **Where the gap write lives, and why it lives here.** A miss is recorded as a
 side effect of resolution failing, by deterministic code, in this module. It is
 not a tool the agent can call. ADR-004: "recording a miss is a side effect of
@@ -49,6 +55,12 @@ class Resolution:
     stage: Stage
     score: float = 0.0
     label_kind: str | None = None
+    #: The form actually looked up. Equal to `normalised` unless a sanitiser
+    #: alias applied -- a typo corrected, a term translated. Kept separate rather
+    #: than overwriting `normalised` because the two answer different questions:
+    #: `normalised` is what the person typed, folded, and it is what the chip
+    #: shows; `lookup` is what the dictionary was asked for.
+    lookup: str = ""
     #: Populated even on abstention -- this is what becomes the gap entry's
     #: candidate attachment points, and it is why "gas bottle" reaches a curator
     #: with five concepts to choose between rather than as a bare miss.
@@ -68,12 +80,18 @@ class Resolution:
     def matched(self) -> bool:
         return self.concept_id is not None
 
+    @property
+    def aliased(self) -> bool:
+        """Whether a sanitiser alias changed what was looked up."""
+        return bool(self.lookup) and self.lookup != self.normalised
+
 
 def resolve(
     surface_form: str,
     *,
     index: resolver.ResolverIndex | None = None,
     embed: Any = None,
+    aliases: dict[str, str] | None = None,
 ) -> Resolution:
     """Resolve one surface form against the published vocabulary.
 
@@ -81,16 +99,30 @@ def resolve(
     caller's separate, explicit step, so this can be used for a curator's search
     box -- where a miss is browsing, not a resolution failure -- without
     polluting the queue.
+
+    `aliases` swaps the *lookup key* and nothing else (see `sanitise`). The
+    surface form is never rewritten, because it is load-bearing three ways
+    downstream: it is the left-hand side of the chip, so "installtion ->
+    Installation" only means anything if the left side is what was typed; it is
+    what a gap entry quotes back to a curator; and it is what the queue merges
+    on. Only ingestion's caller passes None here -- a document's misspelling is a
+    curator's `skos:hiddenLabel` decision, not something the pipeline patches
+    (ADR-002, "Reject, do not repair").
     """
     normalised = normalise(surface_form)
+    lookup = (aliases or {}).get(normalised, normalised)
     blank = Resolution(
-        surface_form=surface_form, normalised=normalised, concept_id=None, stage=Stage.abstain
+        surface_form=surface_form,
+        normalised=normalised,
+        concept_id=None,
+        stage=Stage.abstain,
+        lookup=lookup,
     )
 
     if not normalised or index is None:
         return blank
 
-    hits = index.exact(normalised)
+    hits = index.exact(lookup)
     if len(hits) == 1:
         concept_id = hits[0]
         return Resolution(
@@ -99,7 +131,14 @@ def resolve(
             concept_id=concept_id,
             stage=Stage.exact,
             score=1.0,
-            label_kind=str(index.kinds.get((concept_id, normalised), "pref")),
+            # "alias" rather than the label's own kind when the sanitiser was
+            # what made the lookup succeed. The chip is identical either way --
+            # a correction is silent by design -- but a log and a test can still
+            # tell a typo apart from a label the vocabulary really holds.
+            label_kind="alias"
+            if lookup != normalised
+            else str(index.kinds.get((concept_id, lookup), "pref")),
+            lookup=lookup,
         )
     if len(hits) > 1:
         blank.collision = hits
@@ -108,7 +147,10 @@ def resolve(
     if embed is None or not index.vectors:
         return blank
 
-    shortlist = index.nearest(embed(normalised), k=config.SHORTLIST_SIZE)
+    # The lookup form, not the typed one. Embedding "bouteille de gaz" against
+    # an English index returns a shortlist about nothing, and that shortlist is
+    # what a curator would be shown as the suggested attachment point.
+    shortlist = index.nearest(embed(lookup), k=config.SHORTLIST_SIZE)
     blank.shortlist = shortlist
     if not shortlist:
         return blank
@@ -130,6 +172,7 @@ def resolve(
             stage=Stage.embedding,
             score=top.score,
             shortlist=shortlist,
+            lookup=lookup,
         )
     return blank
 

@@ -18,11 +18,20 @@ hs:equipment a skos:ConceptScheme ;
 
 ##  Dispensers  ###############################################################
 
+# hiddenLabel is for spellings a curator has decided are wrong but real. It
+# resolves and it is never displayed, which is the difference from altLabel: a
+# misspelling is not another name for the thing.
+#
+# These earn their keep on the *ingestion* side. A question typed with a typo is
+# handled at query time by h2o_core.sanitise, which ingestion deliberately does
+# not run -- ADR-002 rejects rather than repairs, so a document that spells a
+# term wrong is a decision recorded here rather than one a pipeline makes.
 h2o:dispenser a skos:Concept ;
     skos:inScheme     hs:equipment ;
     skos:topConceptOf hs:equipment ;
     skos:prefLabel    "Dispenser"@en, "Waterdispenser"@nl ;
     skos:altLabel     "Water Dispenser"@en, "Machine"@en, "Unit"@en ;
+    skos:hiddenLabel  "Dispencer"@en, "Dispensor"@en ;
     skos:definition   "A connected appliance that treats mains water and dispenses it on demand in one or more forms."@en ;
     skos:notation     "EQ-DSP" ;
     owl:versionInfo   "1" .
@@ -79,6 +88,7 @@ h2o:carbon-filter a skos:Concept ;
     skos:inScheme   hs:equipment ;
     skos:prefLabel  "Carbon Filter"@en, "Koolstoffilter"@nl ;
     skos:altLabel   "Carbon Cartridge"@en, "Filter Cartridge"@en, "Activated Carbon Filter"@en ;
+    skos:hiddenLabel "Carbon Filtre"@en, "Carbon Cartrige"@en ;
     skos:definition "A filter using activated carbon to reduce chlorine, taste and odour compounds in the feed water."@en ;
     skos:broader    h2o:filter ;
     skos:related    h2o:purification ;

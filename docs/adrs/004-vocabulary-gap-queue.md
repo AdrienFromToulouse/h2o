@@ -56,6 +56,12 @@ Three corrections, all measured rather than reasoned.
 
 The entry now presents every candidate as a peer: same link, same weight, no ordering language, no score. This widens the judgement the curator is asked to make, which is what §2 intended when it described five candidates and a yes/no — the narrowing was never a decision, it was a rendering. It does nothing about the ordering itself, which remains measured and open. §3 permits one constrained call to rank the supplied shortlist and abstain; that call is still unbuilt, and it should improve on a card that offers real alternatives rather than on one that had already collapsed them. Note the direction of the trade-off recorded below: a *well-ranked* shortlist anchors the expert harder than a badly-ranked one, so it belongs behind the "none of these" mitigation rather than ahead of it.
 
+#### Amendment, M5: translation is a third way the merge key is looser
+
+When the read path's sanitiser ([ADR-002 §4](002-ingestion-against-the-vocabulary.md)) translated a term, the entry merges and displays on the English form and the typed words become its variant. `bouteille de gaz` and `gas bottle` are one gap in an English vocabulary; two entries would split the count the console orders by, and a curator would be authoring against half the evidence. This widens the merge key's existing looseness — punctuation, plurality, and now language — and the trade-off recorded below applies to it unchanged: the queue's notion of "the same term" and the resolver's are not identical by design.
+
+The verbatim question stays the evidence text. A curator judging whether a term is really used has to read what somebody actually asked, not a tidied version of it.
+
 ### 3. What the model may and may not do
 
 At most **one constrained call**, which ranks the supplied shortlist and may **abstain**. That is the entire model involvement in vocabulary evolution.

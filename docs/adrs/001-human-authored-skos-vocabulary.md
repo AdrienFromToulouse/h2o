@@ -105,6 +105,14 @@ agent = Agent(
 - **No answers without grounding.** It needs a resolved concept, a stored claim, or a retrieved snippet. Otherwise the agent says it does not know, and the unresolved term is logged ([ADR-004](004-vocabulary-gap-queue.md)).
 - **No live ERP/CRM connectors.** Instance data arrives as versioned batch imports.
 
+#### Amendment, M5: one model call runs *before* deterministic retrieval
+
+This ADR describes chat as a model that calls deterministic tools. On the miss path it now also calls a model before the deterministic cascade runs, and that is a real change to the shape rather than a detail. The reason is in [ADR-002 §4](002-ingestion-against-the-vocabulary.md): a dictionary cannot recognise `installtion`, embeddings cannot either, and nothing at all could recognise a question asked in French.
+
+What keeps it inside the list above is that **the sanitiser cannot see the vocabulary**. It is shown the question and nothing else, so it can change how a term is spelled or what language it is in, and it cannot change what the term refers to — the substitution that would matter, `gas bottle` to `CO₂ Cylinder`, requires seeing `CO₂ Cylinder`. Concretely it still writes no `prefLabel`, mints no IRI, selects no parent, authors no SPARQL, and holds no write capability; and "no answers without grounding" is untouched, because it hands back an alias map rather than an answer and the cascade decides everything downstream of it.
+
+The bound is a signature, not a prompt: `sanitise.aliases()` accepts a question and a Bedrock client, and there is no parameter an index could arrive through. A test asserts against the request body that no shipped label reaches it.
+
 ## Architecture Overview
 
 The Next.js app on Vercel serves both the curation console and the chat. Its server routes hold the only AWS credentials and SigV4-sign two backends: the Strands agent on AgentCore Runtime (`POST /invocations`, SSE) and the FastAPI vocabulary API on Lambda + API Gateway. Both share the graph store (S3 + embedded Oxigraph), the S3 Vectors index, the DynamoDB operational tables (gap queue, curation audit, document registry), and Bedrock. A shared Python package, `packages/h2o_core`, holds the SKOS models, SPARQL templates, store ports, resolver index, integrity gate, and the OTEL mapper, so that logic is written once and imported by both deployables.

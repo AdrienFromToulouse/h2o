@@ -55,6 +55,13 @@ check-vocab:  ## SHACL gate, resolver parity, deliberate gaps, OTEL mapping tabl
 check-corpus:  ## Registry, seeded contradictions, gap counts, the HTML rule
 	uv run python scripts/check_corpus.py
 
+# Deliberately NOT part of `check`: it costs Bedrock calls and needs credentials.
+# `check` can only assert that the sanitiser behaves when a fake says what it was
+# told to say; the claim the design rests on is about a real model, and this is
+# what asks one. The seeded gaps surviving is the gate.
+check-sanitiser:  ## Ask live Bedrock whether the sanitiser still refuses to substitute meaning
+	uv run python scripts/check_sanitiser.py
+
 cfn-lint:  ## Validate every CloudFormation template
 	@test -d $(CFN) && uv run cfn-lint $(CFN)/*.yaml || echo "  (no templates yet)"
 

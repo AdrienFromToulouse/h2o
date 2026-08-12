@@ -99,7 +99,36 @@ These are measured, not speculative. Do not "fix" them without deciding first.
   README's "12 mentions" is the former. The counts also move between runs.
 - **Chat gap granularity.** A question about "the gas bottle pressure" records
   `gas bottle pressure`, which does not merge with ingestion's `gas bottle`.
-  Honest, but it splits the demo's headline entry.
+  Honest, but it splits the demo's headline entry. Same shape: "what causes
+  limescale" records `causes limescale`. Asserted in `test_retrieval.py` so it
+  is a decision rather than a surprise; the two available fixes (a much larger
+  stopword list, or filing under `content_phrase` while the shortlist was
+  computed against the window) have both been declined so far.
+
+- **The sanitiser does not hold a multi-word foreign term together.** Typos and
+  single foreign words are reliable; `bouteille de gaz` comes back as
+  `bouteille`+`gaz`, or as the whole question, or as `gas cylinder` — a
+  *substituted* English term, which is the move the design refuses. Five prompt
+  formulations, one sitting; the one that worked did it by naming that exact
+  pair in the prompt, which is echoing an example and also a subject-matter leak
+  into a prompt that must hold none. Consequence: an imprecise queue entry, never
+  a wrong resolution (`retrieval._prune_aliases` refuses a multi-word alias that
+  would make a term resolve). `make check-sanitiser` measures it live and gates
+  on the seeded gaps. **Do not chase this with prompt wording.**
+
+- **A mistyped function word still reaches the queue when the sanitiser misses
+  it.** `_worth_reporting` judges the *corrected* form, so `vervangen` and a
+  caught `replce` are dropped — but Nova does not always catch `replce`, and an
+  uncorrected typo is not in `_FUNCTION_WORDS` because the typo is not the word.
+  One low-count row, dismissable. Fixing it properly means edit distance against
+  the stopword list, which is more machinery than the wart justifies today.
+
+- **The sanitiser is one Nova call on every question with a miss.**
+  `sanitise.aliases` runs only when something failed to resolve, so a clean
+  English question pays nothing — but a question with one genuine gap pays for a
+  correction that comes back empty. The re-sweep can also pay
+  `MAX_CANDIDATE_TERMS` Titan calls twice. Measured ceiling, not a leak, but it
+  is the read path's cost shape and it is worth knowing before tuning anything.
 
 ## Milestones
 

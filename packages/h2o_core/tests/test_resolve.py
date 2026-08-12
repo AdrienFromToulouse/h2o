@@ -98,10 +98,76 @@ def test_the_shortlist_is_populated_even_when_nothing_matches(
 ) -> None:
     """Which is what makes a miss useful: "closest existing terms" is the gap
     entry's suggested attachment point, and a bare miss would give a curator
-    nothing to act on."""
+    nothing to act on.
+
+    A *curator*. It is deliberately not on the chat chip any more, where the
+    same list read as "did you mean" and the score cannot support that claim.
+    """
     embed = _embedder(index, near={"co2 cylinder": 0.5})
 
     verdict = resolve.resolve("gas bottle", index=index, embed=embed)
 
     assert verdict.stage is Stage.abstain
     assert verdict.shortlist
+
+
+# ---------------------------------------------------- aliases, at query time
+
+
+def test_an_alias_changes_the_lookup_and_not_the_surface_form(
+    index: resolver.ResolverIndex,
+) -> None:
+    """The whole reason `sanitise` returns a map rather than a rewritten
+    question. A chip reading "installation → Installation" tells a reader
+    nothing, and a gap entry quoting a tidied question is evidence of something
+    nobody said."""
+    verdict = resolve.resolve("installtion", index=index, aliases={"installtion": "installation"})
+
+    assert verdict.concept_id == "installation"
+    assert verdict.stage is Stage.exact
+    assert verdict.surface_form == "installtion"
+    assert verdict.normalised == "installtion"
+    assert verdict.lookup == "installation"
+    assert verdict.aliased
+
+
+def test_an_aliased_match_is_marked_even_though_it_is_not_shown(
+    index: resolver.ResolverIndex,
+) -> None:
+    """The chip is identical to an exact match by design -- a correction is
+    silent. `label_kind` is how a log or a test still tells the two apart."""
+    corrected = resolve.resolve("installtion", index=index, aliases={"installtion": "installation"})
+    genuine = resolve.resolve("Installation", index=index)
+
+    assert corrected.label_kind == "alias"
+    assert genuine.label_kind == "pref"
+    assert corrected.stage is genuine.stage, "and the stage does not give it away"
+
+
+def test_the_shortlist_is_computed_against_the_lookup_form(
+    index: resolver.ResolverIndex,
+) -> None:
+    """Embedding "bouteille de gaz" against an English index returns a shortlist
+    about nothing -- and that shortlist is what a curator is offered as the place
+    to attach the term."""
+    seen: list[str] = []
+
+    def embed(text: str) -> list[float]:
+        seen.append(text)
+        return [1.0, 0.0]
+
+    _embedder(index, near={})
+    resolve.resolve(
+        "bouteille de gaz", index=index, embed=embed, aliases={"bouteille de gaz": "gas bottle"}
+    )
+
+    assert seen == ["gas bottle"]
+
+
+def test_without_aliases_nothing_changes(index: resolver.ResolverIndex) -> None:
+    """Ingestion passes none, and its cascade must be what it was: the stage this
+    records lands in the facts graph as h2o:resolvedBy, and a claim saying it
+    matched exactly when a model corrected the spelling first would be false."""
+    assert resolve.resolve("Carbon Filter", index=index).lookup == "carbon filter"
+    assert not resolve.resolve("Carbon Filter", index=index).aliased
+    assert resolve.resolve("installtion", index=index).concept_id is None

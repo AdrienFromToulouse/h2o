@@ -56,11 +56,32 @@ def test_every_label_in_the_vocabulary_is_indexed(store: pyoxigraph.Store) -> No
     silently stops resolving."""
     rows = vocabulary.concept_labels(store)
 
-    assert len(rows) == 260
-    assert {r.kind for r in rows} == {"pref", "alt"}
+    assert len(rows) == 266
+    assert {r.kind for r in rows} == {"pref", "alt", "hidden"}
 
     carbon = {r.text for r in rows if r.concept_id == "carbon-filter"}
     assert {"Carbon Filter", "Koolstoffilter", "Carbon Cartridge", "Filter Cartridge"} <= carbon
+
+
+def test_a_misspelling_resolves_and_is_never_displayed(store: pyoxigraph.Store) -> None:
+    """`hiddenLabel` was fully plumbed and entirely unused: the query unioned it,
+    the resolver keyed on it, the console named it "Common misspelling", and the
+    vocabulary carried none. A branch nothing exercises is a branch nobody knows
+    is broken.
+
+    It is the ingestion-side answer to a spelling mistake. The read path has
+    `sanitise` for a question typed wrong; a *document* spelled wrong is a
+    curator's decision, because ADR-002 rejects rather than repairs.
+    """
+    rows = vocabulary.concept_labels(store)
+    hidden = {(r.concept_id, r.text) for r in rows if r.kind == "hidden"}
+
+    assert ("dispenser", "Dispencer") in hidden
+    assert hidden, "the misspelling channel has nothing in it"
+
+    card = vocabulary.concept(store, "dispenser")
+    assert card is not None
+    assert "Dispencer" not in str(card.model_dump().get("alt_labels", []))
 
 
 def test_the_review_card_renders_from_real_data(store: pyoxigraph.Store) -> None:
