@@ -162,6 +162,16 @@ def events(answer: Answer, text: str) -> list[dict[str, Any]]:
     for miss in answer.unresolved:
         # The honest failure, made visible. Without this a "not found in the
         # sources" answer looks exactly like a bad answer.
+        #
+        # The shortlist is deliberately *not* here, and it used to be. It is a
+        # curator's artefact: ADR-004 designed it as a suggested attachment
+        # point, where "one of these five, or write your own" turns unbounded
+        # authoring into a yes/no judgement. Rendered to the person who asked
+        # the question it reads as "did you mean", which is a different claim
+        # and one the score cannot support -- `_worth_reporting` records the
+        # measurements, and the console showed the consequence: "process", with
+        # Fault, Dispenser and Component offered as its closest terms. The
+        # entry still carries it; the answer does not.
         stream.append(
             {
                 "type": "concept",
@@ -170,7 +180,6 @@ def events(answer: Answer, text: str) -> list[dict[str, Any]]:
                     "surface_form": miss.surface_form,
                     "concept_id": None,
                     "pref_label": None,
-                    "near_terms": [s.get("pref_label") for s in miss.suggestions[:3]],
                     "gap_id": miss.gap_id,
                 },
             }

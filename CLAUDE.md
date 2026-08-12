@@ -91,7 +91,9 @@ These are measured, not speculative. Do not "fix" them without deciding first.
   `Single-Use Bottles Avoided` — which shares the word. `limescale` scores 0.170
   while the verb `replace` scores 0.393. The score is not weak evidence of
   aboutness; on this vocabulary it points the wrong way. Filtering is therefore
-  structural (`retrieval._worth_reporting`), not a threshold.
+  structural (`retrieval._worth_reporting`), not a threshold. It is also no
+  longer shown in chat: a curator choosing an attachment point can use five
+  candidates, and the same list beside an answer reads as "did you mean".
 - **Mentions are not claims.** `check_corpus.py` counts regex mentions; the
   pipeline counts claims the extractor chose to emit and could evidence. The
   README's "12 mentions" is the former. The counts also move between runs.

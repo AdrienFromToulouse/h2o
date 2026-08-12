@@ -8,7 +8,6 @@ type ConceptChip = {
   surface_form: string;
   concept_id?: string | null;
   pref_label?: string | null;
-  near_terms?: (string | null)[];
   gap_id?: string | null;
 };
 
@@ -35,6 +34,15 @@ type Turn = { question: string; text: string; concepts: ConceptChip[]; conflicts
  * cannot be suppressed. The `miss` chip is the important one — README step 1 is
  * "finds nothing, says so honestly", and without it an honest failure looks
  * exactly like a bad answer.
+ *
+ * A miss shows only that it is a miss. The nearest existing terms are a
+ * curator's artefact and belong on the queue entry, not here: as a suffix to
+ * an answer they read as "did you mean", which is a claim the similarity score
+ * cannot support on this vocabulary.
+ *
+ * A term the sanitiser corrected renders as an ordinary resolution —
+ * "installtion → Installation" — because the left side is always what was
+ * typed. There is no separate corrected state to render, by design.
  */
 export function Chat() {
   const [question, setQuestion] = useState("");
@@ -101,12 +109,6 @@ export function Chat() {
                     {chip.origin === "miss" ? (
                       <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-held px-3 py-1 text-xs text-held">
                         {chip.surface_form} → not in the vocabulary
-                        {chip.near_terms?.filter(Boolean).length ? (
-                          <span className="text-muted">
-                            {" "}
-                            · closest: {chip.near_terms.filter(Boolean).join(", ")}
-                          </span>
-                        ) : null}
                       </span>
                     ) : (
                       <Link

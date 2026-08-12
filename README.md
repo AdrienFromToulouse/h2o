@@ -13,7 +13,7 @@ The vocabulary is a precondition, not an output. Domain experts write version 1 
 ## The loop
 
 1. A user asks about a **"gas bottle"**. The agent resolves against the published vocabulary, finds nothing, says so honestly, and the miss is logged with the verbatim turn.
-2. Ingestion had already parked 12 unresolved mentions of *"gas bottle"* across two service bulletins and the support FAQ. The gap queue merges both sources into **one evidenced entry** with a suggested attachment point: **CO₂ Cylinder**.
+2. Ingestion had already parked 12 unresolved mentions of *"gas bottle"* across two service bulletins and the support FAQ. The gap queue merges both sources into **one evidenced entry** offering five candidate attachment points, **CO₂ Cylinder** among them. It is not offered *first*: the shortlist is similarity over bare label strings, and `Single-Use Bottles Avoided` shares the word "bottles" ([ADR-004 §2](docs/adrs/004-vocabulary-gap-queue.md)). Choosing between five candidates is the expert's judgement, and the console presents them as peers rather than implying a ranking it cannot back.
 3. A domain expert opens the review card. The impact preview reads: *"Adding this alternative term will resolve 12 mentions across 3 documents."* They edit the wording and click **Save new version**. Integrity checks pass, the prior version freezes to history, the new one publishes.
 4. Publishing fans out: the resolver index is rebuilt, the 12 held mentions are re-resolved and attached, 3 documents are re-indexed. The run and its counts appear in the console.
 5. The same question now resolves, **and so does a question about the service bulletin that was unanswerable five minutes earlier.**

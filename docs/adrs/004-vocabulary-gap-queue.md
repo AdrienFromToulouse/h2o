@@ -44,6 +44,18 @@ Per entry, computed in code with no model involvement:
 
 The shortlist is the useful part. *"`gas bottle`, closest existing terms: CO₂ Cylinder (0.81), Mineral Cartridge (0.44)"* turns an unbounded authoring task into a yes/no judgement.
 
+#### Amendment, M5: the shortlist is for the curator, and only the curator
+
+Three corrections, all measured rather than reasoned.
+
+**The scores above are not what the deployed index returns.** For `gas bottle` it ranks `Single-Use Bottles Avoided` (0.348) ahead of `CO₂ Cylinder` (0.28), because Titan embeds two-word labels and returns lexical similarity to whichever label shares a word. Separately, `limescale` — a term the vocabulary genuinely lacks — scores 0.170, while the verb `replace` scores 0.393. The illustration above is aspirational; the mechanism is still useful to a curator reading five candidates and choosing, which is what it was designed for, but no threshold on that number separates a real term from a function word. What reaches the queue is therefore decided structurally, in `retrieval._worth_reporting`, and the score is not consulted at all by default.
+
+**It was also being rendered to the person who asked the question, and no longer is.** Beside an answer, "closest: …" reads as *"did you mean"* — a different claim from "here are five places you could attach this", and one this ranking cannot support. The console showed the consequence: `process → not in the vocabulary · closest: Fault, Dispenser, Component`, three unrelated concepts under a word that names nothing. The chat chip now says only that a term is missing. The entry still carries the shortlist, for the audience §2 wrote it for.
+
+**And the queue card was making the same overclaim through its layout.** Removing the score was not sufficient, because the card the curator *does* see rendered the top-scoring candidate as a link under the words "Closest existing term" and the remaining two as muted, unclickable text. That is the "did you mean" reading again, arriving through visual hierarchy and one adjective instead of through a number — and it was load-bearing rather than cosmetic, because the only actionable candidate on the demonstrator's headline entry was the wrong one. A curator agreeing with `CO₂ Cylinder` had to leave the queue and search the vocabulary for it by hand.
+
+The entry now presents every candidate as a peer: same link, same weight, no ordering language, no score. This widens the judgement the curator is asked to make, which is what §2 intended when it described five candidates and a yes/no — the narrowing was never a decision, it was a rendering. It does nothing about the ordering itself, which remains measured and open. §3 permits one constrained call to rank the supplied shortlist and abstain; that call is still unbuilt, and it should improve on a card that offers real alternatives rather than on one that had already collapsed them. Note the direction of the trade-off recorded below: a *well-ranked* shortlist anchors the expert harder than a badly-ranked one, so it belongs behind the "none of these" mitigation rather than ahead of it.
+
 ### 3. What the model may and may not do
 
 At most **one constrained call**, which ranks the supplied shortlist and may **abstain**. That is the entire model involvement in vocabulary evolution.
@@ -58,7 +70,7 @@ A closed set of types, so the console can render each as one specific question i
 
 | Type | Rendered as |
 | --- | --- |
-| `AddAltLabel` | "**gas bottle**: 3 chat turns, 12 document mentions. Closest term: **CO₂ Cylinder**." |
+| `AddAltLabel` | "**gas bottle**: 3 chat turns, 12 document mentions. This term could belong to one of these: **Single-Use Bottles Avoided**, **CO₂ Cylinder**, **Dispenser**." (per the amendment above: candidates as peers, in an order the reader is not invited to trust) |
 | `NewConcept` | "**scale_buildup**: 214 fleet events, matches nothing. Closest scheme: **Fault**." |
 | `AddMapping` | "Signal **component.type=scale_inhibitor** looks like **Mineral Cartridge**." |
 | `MergeDuplicate` | "**Filter Cartridge** and **Carbon Cartridge** resolve to different concepts but co-occur in 11 sentences." |

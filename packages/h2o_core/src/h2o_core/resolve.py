@@ -50,8 +50,14 @@ class Resolution:
     score: float = 0.0
     label_kind: str | None = None
     #: Populated even on abstention -- this is what becomes the gap entry's
-    #: suggested attachment point, and it is why "gas bottle" produces
-    #: "closest existing terms: CO2 Cylinder (0.81)" rather than a bare miss.
+    #: candidate attachment points, and it is why "gas bottle" reaches a curator
+    #: with five concepts to choose between rather than as a bare miss.
+    #:
+    #: It is a set, not a ranking, and the order is not trustworthy. This comment
+    #: used to claim "CO2 Cylinder (0.81)"; measured against the deployed index it
+    #: is 0.28, behind `Single-Use Bottles Avoided` at 0.348, which shares the word
+    #: "bottles" and is a sustainability metric. `retrieval._worth_reporting`
+    #: records why at length. The console renders these as peers accordingly.
     shortlist: list[Candidate] = field(default_factory=list)
     #: Set when two concepts in one scheme claim the same normalised label. The
     #: integrity gate should make this unreachable; if it happens the cascade

@@ -29,3 +29,8 @@ apps/api/vendor/
 
 # Copied from vocab/shapes/ by `make api-reqs`; vocab/ is the original.
 packages/h2o_core/src/h2o_core/shapes/
+
+# Claude Code session state: an accumulated permission allowlist, not shared
+# configuration. It fills with one-off entries (a specific sed invocation, a cp
+# from ~/Downloads) that mean nothing to anyone else.
+.claude/

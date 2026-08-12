@@ -110,6 +110,14 @@ Two h2o-specific data parts carry the argument of the whole system into the inte
 
 Tool calls render as labelled chips such as *"Looking up the vocabulary"* and *"Searching the manuals"*, not as JSON. A domain expert watching the agent work should learn what it consults, not what its function signatures are.
 
+#### Amendment, M5: what a `data-concept` chip may and may not say
+
+**A miss says only that it is a miss.** It carried the nearest existing terms as a suffix, and the console showed why that was wrong: `process → not in the vocabulary · closest: Fault, Dispenser, Component`. The shortlist is a curator's artefact ([ADR-004 §2](004-vocabulary-gap-queue.md)); rendered beside an answer it reads as *"did you mean"*, and the measured ranking cannot support that reading. The queue entry still carries it.
+
+**A correction is invisible.** A term the read path's sanitiser corrected renders as an ordinary resolution — *"installtion → **Installation**"* — with no badge and no third chip state. The left-hand side is always the words that were typed, which is the only thing that makes the chip worth reading, and it is why the sanitiser returns an alias map rather than a rewritten question ([ADR-002 §4](002-ingestion-against-the-vocabulary.md)).
+
+Neither changes the rule this section exists for: a chip is derived from the retrieval, never written by the model, so it cannot be conjured and — the half that matters more — cannot be suppressed.
+
 ### 6. Credentials and identity
 
 AWS credentials live only in server routes; the browser never reaches AgentCore or API Gateway directly. There is **no end-user authentication in the demonstrator**; the only identity is a client-generated session id in `localStorage`.
