@@ -90,7 +90,7 @@ def test_is_idempotent() -> None:
 
 def test_reads_entities_the_way_a_reader_does() -> None:
     """A byte comparison against raw markup rejects a correct citation."""
-    assert flatten_html('<div class="price">&pound;7.99</div>') == "£7.99"
+    assert flatten_html('<div class="price">&pound;7.99</div>').strip() == "£7.99"
 
 
 def test_drops_comments_before_tags() -> None:
@@ -99,7 +99,50 @@ def test_drops_comments_before_tags() -> None:
     Stripping tags first would leave the comment's inner text behind, and the
     spec sheet carries an HTML comment explaining why it is HTML at all.
     """
-    assert flatten_html("<p>a<!-- <b>hidden</b> -->b</p>") == "ab"
+    # "ab", not "a b": the comment leaves no boundary behind, and the only
+    # block tags are the outer <p> pair, which strip away at the edges.
+    assert flatten_html("<p>a<!-- <b>hidden</b> -->b</p>").strip() == "ab"
+
+
+# --------------------------------------------- block boundaries are whitespace
+
+
+def test_a_table_row_does_not_run_its_cells_together() -> None:
+    """The bug the deployed console showed.
+
+    `Supply pressure1.5 – 6.0 bar` was the stored snippet, faithfully quoting a
+    flattened text that no reader of that table has ever seen. It was not only a
+    display fault: chunks are built from this text and handed to the extractor,
+    so the model was deciding `subject` and `value` from the glue too.
+    """
+    row = "<tr><th>Supply pressure</th><td>1.5 &ndash; 6.0 bar</td></tr>"
+
+    assert flatten_html(row).strip() == "Supply pressure 1.5 – 6.0 bar"
+
+
+def test_an_inline_tag_does_not_break_a_word() -> None:
+    """The other half of the rule, and the reason it is a list of block tags
+    rather than "insert a space for every tag". A reader sees £7.99."""
+    assert flatten_html("<b>&pound;7</b>.99") == "£7.99"
+    assert flatten_html("2.4 <span>L</span>/min") == "2.4 L/min"
+
+
+def test_it_never_emits_two_spaces_in_a_row() -> None:
+    """`</th><td>` is two adjacent block tags, so the naive version emits two
+    separators. `chunking.locate`'s fallback searches a whitespace-collapsed
+    copy of the text, and a run there would shift every offset it returns."""
+    flat = flatten_html("<tr><th>a</th><td>b</td></tr><tr><th>c</th><td>d</td></tr>")
+
+    assert "  " not in flat
+
+
+def test_whitespace_the_document_wrote_is_left_alone() -> None:
+    """Only the spaces this module *introduces* are collapsed. A newline or a
+    non-breaking space is content -- `&nbsp;` is how the spec sheet writes
+    `5 °C` -- and folding it would be a second, silent departure from the rule.
+    """
+    assert flatten_html("<p>a\n\nb</p>").strip() == "a\n\nb"
+    assert flatten_html("<td>5&nbsp;&deg;C</td>").strip() == "5\xa0°C"
 
 
 def test_the_spec_sheet_flattens_to_its_readable_price() -> None:
@@ -111,13 +154,45 @@ def test_the_spec_sheet_flattens_to_its_readable_price() -> None:
     assert "<" not in text
 
 
-def test_introduces_no_character_the_document_lacked() -> None:
-    """What makes the transform safe to cite against.
+def test_invents_no_content_the_document_lacked() -> None:
+    """What makes the transform safe to cite against, stated correctly.
 
-    Every character in the output came from the source or from an entity the
-    source wrote. This is the line between de-markup, which may be cited, and
-    OCR repair, which may not.
+    This used to assert byte preservation -- "introduces no character the
+    document did not contain" -- and the assertion was already only half true:
+    `chunking.read_source` strips each line's indentation and drops blank lines,
+    which deletes characters the document did contain. Held to the letter, the
+    rule also produced `Supply pressure1.5`, failing the standard set in
+    `flatten_html`'s own first sentence.
+
+    The rule it is really held to is **invent no content**, and that is the line
+    against OCR repair: rewriting `ug`→`µg` claims a datasheet printed a
+    character it never printed, and the verbatim gate would certify the
+    fabrication. Whitespace at a box boundary claims nothing.
+
+    So: every *non-whitespace* character in the output came from the source or
+    from an entity the source wrote, in order, with nothing added between them.
     """
     markup = "<p>2.4&nbsp;L/min &ndash; 18 L/h</p>"
+    flat = flatten_html(markup)
 
-    assert flatten_html(markup) == "2.4\xa0L/min – 18 L/h"
+    assert flat.strip() == "2.4\xa0L/min – 18 L/h"
+    assert "".join(flat.split()) == "".join("2.4\xa0L/min – 18 L/h".split())
+
+
+def test_the_spec_sheet_stays_aligned_under_collapsing() -> None:
+    """The invariant `chunking.locate`'s fallback silently depends on.
+
+    Its fallback finds an offset in a whitespace-collapsed copy of the text.
+    That offset is only usable against the original if collapsing preserves
+    length, which for HTML holds because `read_source` strips each line and this
+    module emits no run. `_collapsed_with_origin` now maps back properly and no
+    longer needs the coincidence -- but losing it would still mean the citable
+    text had gained a whitespace run, which is worth failing over.
+    """
+    import re
+
+    from h2o_core.chunking import read_source
+
+    text = read_source(SPEC_SHEET.read_text(), is_html=True).text
+
+    assert len(text) == len(re.sub(r"\s+", " ", text))

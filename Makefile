@@ -51,7 +51,7 @@ check-vocab:  ## SHACL gate, resolver parity, deliberate gaps, OTEL mapping tabl
 # Checks the document corpus against what the ADRs claim it contains: the
 # registry agrees with the directory, the seeded contradictions are really
 # there, the seeded gap really resolves to nothing, and the HTML document
-# really exercises the lossless de-markup rule (ADR-002).
+# really exercises the de-markup rule (ADR-002).
 check-corpus:  ## Registry, seeded contradictions, gap counts, the HTML rule
 	uv run python scripts/check_corpus.py
 

@@ -70,7 +70,7 @@ def read_source(raw: str, *, is_html: bool) -> SourceText:
     # just untidy.
     #
     # Then flatten line by line, so the mapping back to the original survives.
-    # Flattening the whole document at once is lossless for the text but loses
+    # Flattening the whole document at once produces the same text but loses
     # which line each character came from, and line_range is half of a citation.
     text_parts: list[str] = []
     html_starts: list[int] = []
@@ -189,12 +189,42 @@ def locate(source: SourceText, snippet: str) -> tuple[int, int] | None:
         # model reliably introduces, so it is normalised on both sides -- and
         # only whitespace.
         collapsed = re.sub(r"\s+", " ", snippet).strip()
-        flattened = re.sub(r"\s+", " ", source.text)
-        offset = flattened.find(collapsed)
-        if offset < 0:
+        flattened, origin = _collapsed_with_origin(source.text)
+        found = flattened.find(collapsed)
+        if found < 0:
             return None
-        prefix = flattened[:offset]
-        offset = len(prefix)
-        return (source.line_of(min(offset, len(source.text) - 1)),) * 2
+        # `origin` maps back, and it has to. Collapsing changes lengths -- the
+        # installation manual is 2773 characters and 2745 collapsed -- so an
+        # offset into the collapsed copy indexes the wrong place in a line map
+        # built for the original. This used to hand the collapsed offset
+        # straight to `line_of` via a no-op round trip through a prefix slice,
+        # which silently mis-cited every snippet that reached this branch.
+        start = origin[found]
+        end = origin[min(found + max(len(collapsed), 1) - 1, len(origin) - 1)]
+        return source.line_of(start), source.line_of(end)
 
     return source.line_of(offset), source.line_of(min(offset + len(snippet), len(source.text) - 1))
+
+
+def _collapsed_with_origin(text: str) -> tuple[str, list[int]]:
+    """The whitespace-collapsed text, and where each character came from.
+
+    Kept beside `locate` rather than in `normalize` because it is not a
+    definition of anything -- it exists only so the fallback can answer in the
+    original's coordinates.
+    """
+    out: list[str] = []
+    origin: list[int] = []
+    in_space = False
+    for index, character in enumerate(text):
+        if character.isspace():
+            if in_space:
+                continue
+            out.append(" ")
+            origin.append(index)
+            in_space = True
+            continue
+        out.append(character)
+        origin.append(index)
+        in_space = False
+    return "".join(out), origin

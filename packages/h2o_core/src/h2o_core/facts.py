@@ -4,13 +4,21 @@ ADR-005 puts extracted claims in ``h2o:graph/facts`` rather than in DynamoDB,
 alongside the vocabulary they are resolved against. This module writes them
 there and reads them back.
 
-**Claim IRIs are content hashes, and that is what makes re-ingestion idempotent.**
-The IRI is derived from source file, version, line range, predicate, value and
-unit, so re-running a document produces the same IRIs and inserting them again
-is a no-op under RDF's set semantics. kai needed a carefully widened DynamoDB
-sort key and a comment explaining that too narrow a key makes BatchWriteItem
-reject the whole run; here the property falls out of the data model. This is the
-clearest single place the graph choice pays for itself.
+**Claim IRIs are content hashes, and that is most of what makes re-ingestion
+idempotent.** The IRI is derived from source file, version, line range,
+predicate, value and unit, so re-running an unchanged document produces the same
+IRIs and inserting them again is a no-op under RDF's set semantics. kai needed a
+carefully widened DynamoDB sort key and a comment explaining that too narrow a
+key makes BatchWriteItem reject the whole run; here the property falls out of the
+data model. This is the clearest single place the graph choice pays for itself.
+
+It is only *most* of it, and the gap is worth naming because it was found the
+expensive way. The hash covers six fields and `snippet` is not among them, so a
+document whose text is read differently -- the HTML de-markup fix did exactly
+this -- comes back as the same claim wearing a second, contradictory snippet.
+`retract_document` closes that: a document is cleared before it is re-read, so
+"idempotent" means the graph ends up describing the document, not the union of
+every way the document has ever been read.
 
 A held claim -- one whose subject resolved to nothing -- is stored exactly like
 any other, with ``h2o:status h2o:held`` and the surface form recorded instead of
@@ -29,7 +37,7 @@ import pyoxigraph
 from h2o_core import config
 from h2o_core.gaps import gap_key
 
-__all__ = ["Claim", "claim_iri", "insert", "read_claims", "to_quads"]
+__all__ = ["Claim", "claim_iri", "insert", "read_claims", "retract_document", "to_quads"]
 
 H2O = config.ID_NAMESPACE
 XSD = "http://www.w3.org/2001/XMLSchema#"
@@ -143,12 +151,47 @@ def to_quads(claim: Claim) -> list[pyoxigraph.Quad]:
     return quads
 
 
+def retract_document(store: pyoxigraph.Store, source_file: str) -> int:
+    """Remove every claim that came from one document. Returns the count.
+
+    **Re-ingestion is idempotent only for quads that come back byte-identical**,
+    and that is a narrower promise than `insert`'s docstring reads. The IRI
+    hashes six fields and `snippet` is not one of them, so a document re-read
+    after any change to how it is flattened yields the *same* claim carrying a
+    *second* `h2o:snippet` -- and every consumer does a single-valued read, so
+    the console shows whichever row SPARQL happens to return. Change something
+    that *is* hashed, such as a line range, and the old claim is instead
+    orphaned with nothing to delete it.
+
+    Neither is hypothetical: the HTML de-markup fix moved both. So a document is
+    retracted before it is re-read, which is the same move `fanout._restate`
+    makes and for the same reason -- clearing the whole thing beats patching,
+    because the interesting case is always the triple that should no longer be
+    there.
+
+    Scoped to one document, by `sourceFile`. A re-ingest of one file must not
+    touch claims evidenced from another.
+    """
+    graph_name = pyoxigraph.NamedNode(config.FACTS_GRAPH)
+    subjects = {
+        quad.subject
+        for quad in store.quads_for_pattern(
+            None, pyoxigraph.NamedNode(f"{H2O}sourceFile"), _literal(source_file), graph_name
+        )
+    }
+    for subject in subjects:
+        for quad in list(store.quads_for_pattern(subject, None, None, graph_name)):
+            store.remove(quad)
+    return len(subjects)
+
+
 def insert(store: pyoxigraph.Store, claims: list[Claim]) -> int:
     """Add claims to the facts graph.
 
-    Re-inserting an identical claim is a no-op, because the IRI is a hash of the
-    content and RDF is a set. That is ADR-002's idempotent re-ingestion, for
-    free, with no de-duplication pass to get wrong.
+    Re-inserting a byte-identical claim is a no-op, because the IRI is a hash of
+    the content and RDF is a set. That covers the unchanged case only; see
+    `retract_document` for why the pipeline clears a document first rather than
+    relying on it.
     """
     before = len(store)
     for claim in claims:

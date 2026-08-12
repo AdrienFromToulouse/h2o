@@ -9,7 +9,7 @@ assertions rather than prose:
    different documents (ADR-002).
 3. The seeded gap really resolves to nothing, and appears the number of times
    the README and ADR-004 say it does.
-4. The HTML document really contains entities, so the lossless de-markup rule
+4. The HTML document really contains entities, so the de-markup rule
    has something to bite on (ADR-002).
 5. The corpus actually exercises the vocabulary: how many concepts it mentions,
    and by which label.
@@ -167,7 +167,7 @@ for name in html_docs:
         fail("html-rule", f"{name}: flattened text does not contain the readable price")
     else:
         notes.append(
-            f"OK  {name}: {len(entities)} entity types flatten losslessly "
+            f"OK  {name}: {len(entities)} entity types flatten and cells stay apart "
             f"({' '.join(entities[:5])}); a citation quotes '£1,249.00', not '&pound;'"
         )
 

@@ -238,7 +238,8 @@ def test_re_ingesting_the_corpus_changes_nothing(
     """ADR-002: re-ingestion is idempotent on (source_file, doc_version).
 
     Claim IRIs are content hashes and RDF is a set, so this falls out of the
-    data model rather than out of a de-duplication pass.
+    data model rather than out of a de-duplication pass -- for an *unchanged*
+    reading. See the next test for the half that does not fall out.
     """
     store = pyoxigraph.Store()
     kwargs: dict[str, Any] = {
@@ -253,6 +254,104 @@ def test_re_ingesting_the_corpus_changes_nothing(
 
     pipeline.ingest_corpus(corpus, store, **kwargs)
     assert graph.dump(store) == after_first
+
+
+def test_a_document_read_differently_replaces_its_claims(
+    corpus: list[tuple[DocumentRecord, str]], index: resolver.ResolverIndex
+) -> None:
+    """The half content-addressing does not cover, found the expensive way.
+
+    `snippet` is not one of the six fields the claim IRI hashes, so a document
+    whose *text* is read differently comes back as the same claim wearing a
+    second, contradictory snippet -- and every consumer does a single-valued
+    read, so the console shows whichever row SPARQL returns first. The HTML
+    de-markup fix moved exactly this: `Supply pressure1.5 – 6.0 bar` became
+    `Supply pressure 1.5 – 6.0 bar`.
+
+    So a document is retracted before it is re-read. Simulated here by changing
+    what the reader emits, which is the same thing from the graph's point of
+    view.
+    """
+    store = pyoxigraph.Store()
+    kwargs: dict[str, Any] = {
+        "index": index,
+        "gaps_table": gaps_table(),
+        "write_vectors": False,
+    }
+
+    pipeline.ingest_corpus(corpus, store, extract=_sentence_reader, **kwargs)
+
+    def _shouting_reader(chunk: Chunk, source: SourceText, **_: Any) -> extraction.Extraction:
+        outcome = _sentence_reader(chunk, source)
+        for fact in outcome.facts:
+            fact["snippet"] = fact["snippet"].upper()
+        return outcome
+
+    result = pipeline.ingest_corpus(corpus, store, extract=_shouting_reader, **kwargs)
+
+    assert result.claims_retracted > 0, "the second run did not clear the first"
+
+    # Every surviving snippet must come from the *second* reading. Asserted this
+    # way rather than as "one snippet per claim", because a claim legitimately
+    # carries several within a single run: the IRI hashes the evidence and not
+    # the subject, so four facts quoting one line are one claim with four
+    # surface forms. That is the property re-ingestion idempotence rests on, and
+    # it is not what this test is about.
+    # `.value`, not `str(quad.object)`: the serialised literal escapes newlines
+    # as a backslash and a lowercase `n`, so comparing the serialisation reports
+    # every multi-line snippet as stale.
+    stale = [
+        quad.object.value
+        for quad in store.quads_for_pattern(
+            None,
+            pyoxigraph.NamedNode(f"{config.ID_NAMESPACE}snippet"),
+            None,
+            pyoxigraph.NamedNode(config.FACTS_GRAPH),
+        )
+        if isinstance(quad.object, pyoxigraph.Literal)
+        and quad.object.value != quad.object.value.upper()
+    ]
+    assert not stale, f"snippets from the first reading survived: {stale[:2]}"
+
+
+def test_retraction_is_scoped_to_one_document(
+    corpus: list[tuple[DocumentRecord, str]], index: resolver.ResolverIndex
+) -> None:
+    """Re-reading one file must not disturb what another evidenced."""
+    store = pyoxigraph.Store()
+    pipeline.ingest_corpus(
+        corpus,
+        store,
+        index=index,
+        extract=_sentence_reader,
+        gaps_table=gaps_table(),
+        write_vectors=False,
+    )
+
+    others = {
+        str(quad.subject)
+        for quad in store.quads_for_pattern(
+            None,
+            pyoxigraph.NamedNode(f"{config.ID_NAMESPACE}sourceFile"),
+            None,
+            pyoxigraph.NamedNode(config.FACTS_GRAPH),
+        )
+        if str(quad.object) != '"01-installation-manual-v3.md"'
+    }
+
+    facts.retract_document(store, "01-installation-manual-v3.md")
+
+    survivors = {
+        str(quad.subject)
+        for quad in store.quads_for_pattern(
+            None,
+            pyoxigraph.NamedNode(f"{config.ID_NAMESPACE}sourceFile"),
+            None,
+            pyoxigraph.NamedNode(config.FACTS_GRAPH),
+        )
+    }
+    assert survivors == others
+    assert others, "the corpus has claims from more than one document"
 
 
 def test_claims_carry_the_stage_that_resolved_them(

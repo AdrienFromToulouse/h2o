@@ -49,6 +49,10 @@ class IngestResult:
     claims_held: int = 0
     conflicts_found: int = 0
     gaps_recorded: int = 0
+    #: Claims cleared before this document was re-read. Nonzero means the
+    #: document had been ingested before, and is the number to look at when a
+    #: re-run's totals move: they moved because the old reading went away.
+    claims_retracted: int = 0
     rejections: list[extraction.Rejection] = field(default_factory=list)
     held_surfaces: dict[str, set[str]] = field(default_factory=dict)
 
@@ -60,6 +64,7 @@ class IngestResult:
         self.claims_active += other.claims_active
         self.claims_held += other.claims_held
         self.gaps_recorded += other.gaps_recorded
+        self.claims_retracted += other.claims_retracted
         self.rejections.extend(other.rejections)
         for surface, files in other.held_surfaces.items():
             self.held_surfaces.setdefault(surface, set()).update(files)
@@ -237,6 +242,14 @@ def ingest_document(
     # 6. Persist the claims. Conflict detection runs corpus-wide afterwards,
     #    because two documents disagreeing is the case that matters and neither
     #    of them can see the other.
+    #
+    #    Retract first, so what lands is what this document says rather than the
+    #    union of every previous reading of it. Content-addressed IRIs make an
+    #    unchanged re-ingest a no-op on their own, but they do not cover a change
+    #    to *how the document is read*: `snippet` is not in the hash, so the same
+    #    claim would keep its old snippet alongside the new one. See
+    #    `facts.retract_document`.
+    result.claims_retracted = facts.retract_document(store, record.filename)
     facts.insert(store, claims)
     return result
 
