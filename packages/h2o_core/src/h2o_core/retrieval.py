@@ -138,7 +138,15 @@ def _now() -> str:
 
 
 def _words(question: str) -> list[str]:
-    return question.split()
+    """The question's words, without the punctuation attached to them.
+
+    "carbon filter?" is the same term as "carbon filter", and a gap entry
+    called "pressure?" is a queue row nobody can act on. Stripped at the edges
+    only, so a hyphen or an apostrophe inside a word survives -- "point-of-use"
+    is one word and `normalise` is what decides how it folds.
+    """
+    stripped = (word.strip(".,;:!?()[]{}\"'“”‘’") for word in question.split())
+    return [word for word in stripped if word]
 
 
 def candidate_terms(
@@ -200,6 +208,16 @@ def candidate_terms(
             span = range(start, start + length)
             if any(consumed[i] for i in span):
                 continue
+            # A candidate may not begin or end with a function word. Judging
+            # that afterwards was not enough: the sweep takes the longest window
+            # first, so "how do I check the gas bottle pressure" offered
+            # "I check the gas" before it ever offered "gas bottle pressure",
+            # consumed the words, and queued an entry about nothing. Shaping the
+            # candidates is what makes the longest-first order pick out phrases
+            # rather than windows.
+            edges = (normalise(words[start]), normalise(words[start + length - 1]))
+            if any(edge in _FUNCTION_WORDS for edge in edges):
+                continue
             phrase = " ".join(words[start : start + length])
             if normalise(phrase):
                 candidates.append((start, length, phrase))
@@ -224,16 +242,79 @@ def candidate_terms(
     return verdicts
 
 
-def _worth_reporting(verdict: resolve.Resolution) -> bool:
-    """Whether an abstention is near enough the vocabulary to be a gap.
-
-    A question is mostly function words. Recording every one of them would bury
-    the queue that ADR-004 orders by occurrence count, and the count is the only
-    signal a curator has.
+#: Words that cannot make a phrase worth queueing on their own: interrogatives,
+#: auxiliaries, determiners, prepositions, and the handful of generic verbs a
+#: question about equipment is built from. A gap entry is a *thing the documents
+#: should have a word for*, so an action is not a candidate even when it scores
+#: well -- "check" is a question about Inspection, not a missing term.
+_FUNCTION_WORDS = frozenset(
     """
-    if verdict.matched or not verdict.shortlist:
+    a an the this that these those my our your its it they them he she we i you
+    is are was were be been being am do does did done doing have has had having
+    can could shall should will would may might must
+    how what when where why which who whom whose whether
+    to of in on at by for from with without into onto about over under after
+    before during between through as and or but not no nor if then than so
+    check checking find finding get getting know knowing see seeing tell telling
+    use using need needing want wanting make making take taking put putting
+    replace replacing replaced change changing changed clean cleaning fix fixing
+    often long much many always ever again also just still now soon
+    please help me my mine ok okay
+    """.split()
+)
+
+
+def content_phrase(phrase: str) -> str:
+    """The phrase with its function words trimmed from both ends.
+
+    "how do I check the gas bottle" becomes "gas bottle". Trimming rather than
+    filtering, because a function word *inside* a term is part of it: "point of
+    use" is a real term and "rate of flow" is a plausible one.
+    """
+    words = [word for word in normalise(phrase).split() if word]
+    while words and words[0] in _FUNCTION_WORDS:
+        words.pop(0)
+    while words and words[-1] in _FUNCTION_WORDS:
+        words.pop()
+    return " ".join(words)
+
+
+def _worth_reporting(verdict: resolve.Resolution) -> bool:
+    """Whether an abstention is worth a curator's attention.
+
+    **Structural, not a threshold, and that is a correction.** This used to
+    require the top shortlist score to clear ``CHAT_GAP_FLOOR``, on the
+    assumption that a real term scores higher against the vocabulary than a
+    function word does. Measured against the deployed index, that assumption is
+    simply false -- these are the top scores for one question's phrases:
+
+        0.496  "check"       -> Inspection
+        0.395  "do"          -> Reverse Osmosis
+        0.366  "how"         -> Fault
+        0.348  "gas bottle"  -> Single-Use Bottles Avoided
+
+    The term the whole demonstrator is built on ranks *below* three function
+    words. Titan embeds two-word labels, so it returns lexical similarity, and
+    lexical similarity to a short label is not evidence of aboutness. No
+    threshold on this number can separate the cases, so the filter asks a
+    different question: does the phrase, with its function words trimmed away,
+    still name something?
+
+    The score is not used at all by default, and that is the strongest form of
+    the same finding. "limescale" -- the term ADR-003's second loop is built on,
+    and one the vocabulary genuinely lacks -- scores 0.170, while the verb
+    "replace" scores 0.393. The number is not weak evidence of aboutness; on
+    this vocabulary it points the wrong way. `CHAT_GAP_FLOOR` therefore defaults
+    to 0 and stays only as an escape hatch for a deployment whose embeddings
+    behave differently.
+    """
+    if verdict.matched:
         return False
-    return verdict.shortlist[0].score >= config.CHAT_GAP_FLOOR
+    if not content_phrase(verdict.surface_form):
+        return False
+    if not config.CHAT_GAP_FLOOR:
+        return True
+    return bool(verdict.shortlist) and verdict.shortlist[0].score >= config.CHAT_GAP_FLOOR
 
 
 # ------------------------------------------------------------- the expansion

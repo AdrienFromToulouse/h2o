@@ -1,44 +1,58 @@
+import Image from "next/image";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
 const CARDS = [
   {
+    href: "/chat",
+    title: "Ask",
+    body: "Answers come from the documents, with the file and the words they used. When the sources disagree, you get both sides.",
+  },
+  {
     href: "/vocabulary",
     title: "Vocabulary",
-    body: "The terms the platform understands, grouped by the vocabulary they belong to.",
+    body: "The terms the platform understands, written by people before anything was ingested.",
   },
   {
     href: "/gaps",
     title: "Gaps",
-    body: "Words the documents and the chat used that the vocabulary does not know yet, ordered by how often they came up.",
+    body: "Words the documents and the questions used that the vocabulary does not know yet, ordered by how often they came up.",
   },
   {
     href: "/runs",
     title: "Runs",
-    body: "What happened after each change: what was reindexed, and how many mentions it resolved.",
+    body: "What happened after each change: what was reindexed, and how many waiting mentions it resolved.",
   },
 ];
 
 export default function Home() {
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Vocabulary console</h1>
-        <p className="mt-2 max-w-2xl text-[--color-muted]">
-          Adding a term here changes what the platform can answer. Every edit shows what it will do
-          before you save it, and what it did afterwards.
+    <div className="space-y-10">
+      <div className="flex flex-col items-center gap-4 text-center">
+        <Image src="/aquaknow.png" alt="AquaKnow" width={140} height={140} priority />
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">AquaKnow</h1>
+          <p className="mt-1 text-sm uppercase tracking-[0.2em] text-muted">
+            Knowledge · AI · Action
+          </p>
+        </div>
+        <p className="max-w-2xl text-muted">
+          People write the vocabulary. The assistant uses it, and reports what it is missing. You
+          decide what gets added — and adding a term changes what the platform can answer, with the
+          counts to prove it.
         </p>
       </div>
-      <div className="grid gap-4 sm:grid-cols-3">
+
+      <div className="grid gap-4 sm:grid-cols-2">
         {CARDS.map((card) => (
           <Link
             key={card.href}
             href={card.href}
-            className="rounded-lg border border-[--color-line] bg-white p-5 hover:border-[--color-accent]"
+            className="rounded-lg border border-line bg-white p-5 hover:border-accent"
           >
             <h2 className="font-medium">{card.title}</h2>
-            <p className="mt-1 text-sm text-[--color-muted]">{card.body}</p>
+            <p className="mt-1 text-sm text-muted">{card.body}</p>
           </Link>
         ))}
       </div>

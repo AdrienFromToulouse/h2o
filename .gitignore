@@ -26,3 +26,6 @@ apps/api/vendor/
 
 # Next.js incremental typecheck state
 *.tsbuildinfo
+
+# Copied from vocab/shapes/ by `make api-reqs`; vocab/ is the original.
+packages/h2o_core/src/h2o_core/shapes/

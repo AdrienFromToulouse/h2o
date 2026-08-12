@@ -37,6 +37,12 @@ quote-style = "double"
 
 [tool.mypy]
 python_version = "3.13"
+# Resolve h2o_core from the source tree rather than from whatever happens to be
+# installed. Without this, `from h2o_core import fanout` resolves through the
+# editable install's finder, which mypy cannot follow into, and submodules added
+# since the last `uv sync` read as missing attributes -- a failure that depends
+# on install state rather than on the code.
+mypy_path = "packages/h2o_core/src"
 disallow_untyped_defs = true
 warn_unused_configs = true
 warn_no_return = true

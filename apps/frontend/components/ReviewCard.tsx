@@ -84,10 +84,10 @@ export function ReviewCard({ concept, prefill }: { concept: ConceptDetail; prefi
   }
 
   return (
-    <article className="space-y-6 rounded-lg border border-[--color-line] bg-white p-6">
+    <article className="space-y-6 rounded-lg border border-line bg-white p-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{concept.pref_label.en}</h1>
-        <p className="mt-1 text-sm text-[--color-muted]">
+        <p className="mt-1 text-sm text-muted">
           {LABELS.versionInfo} {concept.version}
           {concept.parent ? ` · ${LABELS.broader} ${concept.parent.pref_label}` : ""}
         </p>
@@ -95,21 +95,21 @@ export function ReviewCard({ concept, prefill }: { concept: ConceptDetail; prefi
 
       {concept.definition?.en ? (
         <section>
-          <h2 className="text-sm font-medium text-[--color-muted]">{LABELS.definition}</h2>
+          <h2 className="text-sm font-medium text-muted">{LABELS.definition}</h2>
           <p className="mt-1">{concept.definition.en}</p>
         </section>
       ) : null}
 
       <section>
-        <h2 className="text-sm font-medium text-[--color-muted]">{LABELS.altLabel}</h2>
+        <h2 className="text-sm font-medium text-muted">{LABELS.altLabel}</h2>
         <ul className="mt-2 flex flex-wrap gap-2">
           {altLabels.map((label) => (
-            <li key={label} className="rounded border border-[--color-line] px-2 py-1 text-sm">
+            <li key={label} className="rounded border border-line px-2 py-1 text-sm">
               {label}
             </li>
           ))}
           {pending.trim() && !altLabels.includes(pending.trim()) ? (
-            <li className="rounded border border-dashed border-[--color-accent] px-2 py-1 text-sm text-[--color-accent]">
+            <li className="rounded border border-dashed border-accent px-2 py-1 text-sm text-accent">
               {pending.trim()}
             </li>
           ) : null}
@@ -120,7 +120,7 @@ export function ReviewCard({ concept, prefill }: { concept: ConceptDetail; prefi
             placeholder="Add another term people use"
             value={pending}
             onChange={(event) => setPending(event.target.value)}
-            className="w-full rounded border border-[--color-line] px-3 py-2 text-sm"
+            className="w-full rounded border border-line px-3 py-2 text-sm"
           />
           <button
             type="button"
@@ -128,7 +128,7 @@ export function ReviewCard({ concept, prefill }: { concept: ConceptDetail; prefi
               if (pending.trim()) setAltLabels([...altLabels, pending.trim()]);
               setPending("");
             }}
-            className="rounded border border-[--color-line] px-3 py-2 text-sm"
+            className="rounded border border-line px-3 py-2 text-sm"
           >
             Add
           </button>
@@ -137,12 +137,12 @@ export function ReviewCard({ concept, prefill }: { concept: ConceptDetail; prefi
 
       {concept.machine_signals?.length ? (
         <section>
-          <h2 className="text-sm font-medium text-[--color-muted]">Machine signals</h2>
+          <h2 className="text-sm font-medium text-muted">Machine signals</h2>
           {/* Read-only, and instrument *names* only. ADR-006 names this as one
               of exactly two places a signal name may appear outside the toggle. */}
           <ul className="mt-1 space-y-1 text-sm">
             {concept.machine_signals.map((signal) => (
-              <li key={signal.signal} className="text-[--color-muted]">
+              <li key={signal.signal} className="text-muted">
                 {signal.signal}
                 {signal.unit ? ` (${signal.unit})` : ""}
               </li>
@@ -152,8 +152,8 @@ export function ReviewCard({ concept, prefill }: { concept: ConceptDetail; prefi
       ) : null}
 
       {changed ? (
-        <section className="space-y-3 rounded border border-[--color-line] bg-slate-50 p-4">
-          <label className="block text-sm font-medium text-[--color-muted]" htmlFor="change-note">
+        <section className="space-y-3 rounded border border-line bg-slate-50 p-4">
+          <label className="block text-sm font-medium text-muted" htmlFor="change-note">
             {LABELS.changeNote}
           </label>
           <input
@@ -161,14 +161,14 @@ export function ReviewCard({ concept, prefill }: { concept: ConceptDetail; prefi
             value={changeNote}
             onChange={(event) => setChangeNote(event.target.value)}
             placeholder="Why is this the right term?"
-            className="w-full rounded border border-[--color-line] px-3 py-2 text-sm"
+            className="w-full rounded border border-line px-3 py-2 text-sm"
           />
 
           {/* Directly above Save, which is where ADR-006 puts it. */}
           {impact?.sentence ? (
             <p className="text-sm font-medium">{impact.sentence}</p>
           ) : (
-            <p className="text-sm text-[--color-muted]">
+            <p className="text-sm text-muted">
               {impact ? "This change resolves no waiting mentions." : "Working out what this does…"}
             </p>
           )}
@@ -185,12 +185,12 @@ export function ReviewCard({ concept, prefill }: { concept: ConceptDetail; prefi
             type="button"
             disabled={publishing || !changeNote.trim()}
             onClick={publish}
-            className="rounded bg-[--color-accent] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+            className="rounded bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
           >
             {publishing ? "Publishing…" : "Publish"}
           </button>
           {!changeNote.trim() ? (
-            <p className="text-xs text-[--color-muted]">
+            <p className="text-xs text-muted">
               A reason is required — the next curator reads it.
             </p>
           ) : null}
@@ -203,12 +203,12 @@ export function ReviewCard({ concept, prefill }: { concept: ConceptDetail; prefi
         <button
           type="button"
           onClick={() => setTechnical(!technical)}
-          className="text-sm text-[--color-muted] underline"
+          className="text-sm text-muted underline"
         >
           {technical ? "Hide technical detail" : "Show technical detail"}
         </button>
         {technical && concept.technical ? (
-          <dl className="mt-2 space-y-1 text-xs text-[--color-muted]">
+          <dl className="mt-2 space-y-1 text-xs text-muted">
             <dt>Identifier</dt>
             <dd className="font-mono">{concept.technical.iri}</dd>
           </dl>
@@ -243,9 +243,9 @@ function RunProgress({ runId }: { runId: string }) {
   }, [runId]);
 
   return (
-    <section className="rounded border border-[--color-line] bg-slate-50 p-4 text-sm">
+    <section className="rounded border border-line bg-slate-50 p-4 text-sm">
       <p className="font-medium">Published.</p>
-      <p className="mt-1 text-[--color-muted]">
+      <p className="mt-1 text-muted">
         {run?.summary ?? (run?.status === "succeeded" ? "Done." : "Working through the change…")}
       </p>
     </section>

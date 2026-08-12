@@ -1,11 +1,36 @@
 @import "tailwindcss";
 
+/* Taken from the AquaKnow mark: the droplet runs deep navy through mid blue to
+   a bright cyan, and the wordmark uses the same three. Named by role rather
+   than by hue, so a component says what it means and the palette can move
+   without a rename. */
 @theme {
-  --color-ink: #0f172a;
-  --color-muted: #64748b;
-  --color-line: #e2e8f0;
-  --color-accent: #0369a1;
+  --color-ink: #0b2545;
+  --color-muted: #5b7a9d;
+  --color-line: #dbe9f6;
+  --color-surface: #ffffff;
+  --color-canvas: #f3f9fe;
+
+  --color-accent: #1d6fd8;
+  --color-accent-deep: #16337a;
+  --color-accent-bright: #38bdf8;
+
   --color-held: #b45309;
+  --color-refused: #b91c1c;
 }
 
-body { color: var(--color-ink); background: #f8fafc; }
+body {
+  color: var(--color-ink);
+  background: var(--color-canvas);
+}
+
+/* The droplet's gradient, reused wherever the brand should be felt rather than
+   shown: the header rule, and the hero. */
+.brand-rule {
+  background: linear-gradient(
+    90deg,
+    var(--color-accent-deep),
+    var(--color-accent),
+    var(--color-accent-bright)
+  );
+}

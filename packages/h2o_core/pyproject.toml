@@ -25,11 +25,13 @@ dependencies = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/h2o_core"]
 
-# The SHACL shapes are the integrity gate, and ADR-005 keeps them in vocab/ so
-# they are reviewed in git exactly like the vocabulary they constrain. The
-# Lambda still needs them at runtime, so the file is force-included into the
-# wheel rather than copied into src/ -- one reviewed original, one packaged
-# artefact. A second copy would be a second thing to keep in step, which is the
-# mistake normalise() already taught this repo once.
-[tool.hatch.build.targets.wheel.force-include]
-"../../vocab/shapes/skos-integrity.ttl" = "h2o_core/shapes/skos-integrity.ttl"
+# The SHACL shapes are NOT force-included, and that is a correction rather than
+# an omission. Force-include materialises a bare `h2o_core/shapes/` directory in
+# site-packages, which then shadows the editable install and makes every other
+# module of this package unimportable locally -- while working perfectly in the
+# Lambda, where the whole wheel is unpacked together.
+#
+# Instead `make api-reqs` copies vocab/shapes/ into src/h2o_core/shapes/ just
+# before building, and that path is gitignored. One reviewed original in vocab/,
+# where ADR-005 keeps it; one copy inside the artefact; and nothing checked in
+# that could drift from it.

@@ -90,6 +90,10 @@ dev-api:  ## Serve the vocabulary API on :8085 (real S3, DynamoDB, Bedrock)
 # ------------------------------------------------------------------ packaging
 
 api-reqs:  ## Stage the Lambda's third-party deps and the h2o_core wheel
+	# The gate's shapes travel inside the wheel. Copied rather than checked in,
+	# so vocab/shapes/ stays the one reviewed original (ADR-005).
+	mkdir -p packages/h2o_core/src/h2o_core/shapes
+	cp vocab/shapes/*.ttl packages/h2o_core/src/h2o_core/shapes/
 	uv export --frozen --no-dev --no-emit-workspace --package api -o apps/api/requirements.txt
 	@grep -q '^h2o-core' apps/api/requirements.txt \
 		&& { echo "error: h2o-core must not be in requirements.txt (it ships as a wheel)"; exit 1; } \

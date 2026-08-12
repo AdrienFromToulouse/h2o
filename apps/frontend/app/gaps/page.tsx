@@ -11,14 +11,14 @@ export default async function GapsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Gaps</h1>
-        <p className="mt-2 max-w-2xl text-[--color-muted]">
+        <p className="mt-2 max-w-2xl text-muted">
           Words the documents and the chat used that the vocabulary does not know. Ordered by how
           often they came up, so the order is something you can check rather than trust.
         </p>
       </div>
 
       {gaps.length === 0 ? (
-        <p className="rounded-lg border border-[--color-line] bg-white p-5 text-[--color-muted]">
+        <p className="rounded-lg border border-line bg-white p-5 text-muted">
           Nothing waiting. Every term the sources used is one the vocabulary knows.
         </p>
       ) : (

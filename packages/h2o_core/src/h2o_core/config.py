@@ -130,13 +130,14 @@ MAX_CANDIDATE_TERMS = 12
 #: finding what the documents say about carbon filters.
 EXPAND_DEPTH = 1
 
-#: How close an abstention must come to an existing term before it is worth a
-#: curator's attention. Deliberately below RESOLVE_THRESHOLD: a phrase the
-#: cascade would not resolve can still be a missing label, and that gap is the
-#: whole point. Deliberately well above zero: a question is mostly function
-#: words, and "how do i" is not a vocabulary gap. This is the one number that
-#: decides what a chat turn is allowed to put in front of a person.
-CHAT_GAP_FLOOR = float(os.getenv("H2O_CHAT_GAP_FLOOR", "0.65"))
+#: Off by default, which is a finding rather than an oversight. It was 0.65, on
+#: the assumption that a real term scores higher against the vocabulary than a
+#: function word does. Measured against the deployed index the assumption points
+#: the wrong way: "limescale" -- a term the vocabulary genuinely lacks -- scores
+#: 0.170, while the verb "replace" scores 0.393. What reaches a curator is now
+#: decided structurally in `retrieval._worth_reporting`; this remains only as an
+#: escape hatch for a deployment whose embeddings behave differently.
+CHAT_GAP_FLOOR = float(os.getenv("H2O_CHAT_GAP_FLOOR", "0"))
 
 # ------------------------------------------------------------- the gap queue
 
